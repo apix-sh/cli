@@ -29,6 +29,8 @@ brew install apix-sh/apix/apix
 
 ### curl | sh
 
+> Install script is maintained in the [web repo](https://github.com/apix-sh/web/blob/main/public/install.sh).
+
 Latest:
 
 ```bash
