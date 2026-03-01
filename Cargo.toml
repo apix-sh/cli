@@ -1,11 +1,15 @@
 [package]
-name = "apix"
+name = "apix-cli"
 version = "0.1.0"
 edition = "2024"
 description = "API explorer CLI for AI agents and humans – search, browse, and execute APIs from your terminal"
 license = "MIT"
 repository = "https://github.com/apix-sh/cli"
 keywords = ["api", "cli", "openapi", "agent", "local-first"]
+
+[[bin]]
+name = "apix"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
