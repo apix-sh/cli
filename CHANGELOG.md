@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/apix-sh/cli/compare/v0.1.0...v0.1.1) - 2026-03-01
+
+### Fixed
+
+- Generate relative Markdown links for type references instead of `apix peek` commands in generated documentation.
+- table formatting issue in generated md files
+
+### Other
+
+- add SKILL.md
+- add ascii banner
+- relocate install script and update README
+- adjust release-plz workflow.
+- release v0.1.0 ([#1](https://github.com/apix-sh/cli/pull/1))
+
 ## [0.1.0](https://github.com/apix-sh/cli/releases/tag/v0.1.0) - 2026-03-01
 
 ### Other
