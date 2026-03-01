@@ -318,7 +318,6 @@ fn inline_body_doc(ctype: &str, media_type: &MediaType, namespace: &str, version
         ReferenceOr::Item(schema) => {
             let rows = schema_property_rows(schema);
             if !rows.is_empty() {
-                out.push_str("| :--- | :---: | :--- | :--- |\n");
                 out.push_str("| Property | Required | Type | Description |\n");
                 out.push_str("| :--- | :---: | :--- | :--- |\n");
                 for (name, required, ty, desc) in rows {
@@ -330,7 +329,6 @@ fn inline_body_doc(ctype: &str, media_type: &MediaType, namespace: &str, version
                         desc
                     ));
                 }
-                out.push_str("| :--- | :---: | :--- | :--- |\n");
             } else {
                 out.push_str("*(No object properties found)*\n");
             }

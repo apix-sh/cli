@@ -13,26 +13,22 @@ content_type: {{ content_type }}
 {% if path_params.is_empty() %}
 *(None)*
 {% else %}
-| :--- | :---: | :--- | :--- |
 | Name | Required | Type | Description |
 | :--- | :---: | :--- | :--- |
-{% for p in path_params %}
+{% for p in path_params -%}
 | `{{ p.name }}` | {{ p.required }} | {{ p.param_type }} | {{ p.description }} |
-{% endfor %}
-| :--- | :---: | :--- | :--- |
+{% endfor -%}
 {% endif %}
 
 ## Query Parameters
 {% if query_params.is_empty() %}
 *(None)*
 {% else %}
-| :--- | :---: | :--- | :--- |
 | Name | Required | Type | Description |
 | :--- | :---: | :--- | :--- |
-{% for p in query_params %}
+{% for p in query_params -%}
 | `{{ p.name }}` | {{ p.required }} | {{ p.param_type }} | {{ p.description }} |
-{% endfor %}
-| :--- | :---: | :--- | :--- |
+{% endfor -%}
 {% endif %}
 
 ## Request Body
