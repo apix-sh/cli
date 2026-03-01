@@ -1,0 +1,147 @@
+pub mod frontmatter;
+pub mod resolver;
+
+use crate::error::ApixError;
+use crate::output;
+use std::path::Path;
+pub fn show(route: &str, source_override: Option<&str>) -> Result<(), ApixError> {
+    let resolved = match resolver::resolve_route_path(route, source_override) {
+        Ok(r) => r,
+        Err(ApixError::RouteNotFound(_)) => {
+            let suggestions = suggest_routes(route)?;
+            let hint = if suggestions.is_empty() {
+                String::new()
+            } else {
+                format!(". Did you mean one of: {}", suggestions.join(", "))
+            };
+            return Err(ApixError::RouteNotFound(format!("{route}{hint}")));
+        }
+        Err(err) => return Err(err),
+    };
+    let content = std::fs::read_to_string(resolved.file_path)?;
+    let rendered = if resolved.source != ".local" {
+        format!("> Source: `{}`\n\n{}", resolved.source, content)
+    } else {
+        content
+    };
+    output::print_markdown_with_optional_pager(&rendered);
+    Ok(())
+}
+
+pub fn peek(route: &str, source_override: Option<&str>) -> Result<(), ApixError> {
+    let resolved = resolver::resolve_route_path(route, source_override)?;
+    let content = std::fs::read_to_string(resolved.file_path)?;
+    if resolved.relative.starts_with(Path::new("_types")) {
+        let (frontmatter, _) =
+            frontmatter::extract_frontmatter::<frontmatter::TypeFrontmatter>(&content)?;
+        let fm = serde_yaml::to_string(&frontmatter)
+            .map_err(|err| ApixError::Parse(format!("Unable to render frontmatter: {err}")))?;
+        let mut out = String::new();
+        out.push_str(&format!("---\n{}\n---\n\n", fm.trim_end()));
+        out.push_str("## Path Parameters\n*(None)*\n\n");
+        out.push_str("## Required Request Body Fields\n*(None)*\n");
+        if resolved.source != ".local" {
+            out = format!("> Source: `{}`\n\n{}", resolved.source, out);
+        }
+        output::print_markdown(&out);
+        return Ok(());
+    }
+
+    let (frontmatter, body) =
+        frontmatter::extract_frontmatter::<frontmatter::Frontmatter>(&content)?;
+    let fm = serde_yaml::to_string(&frontmatter)
+        .map_err(|err| ApixError::Parse(format!("Unable to render frontmatter: {err}")))?;
+    let mut out = String::new();
+    out.push_str(&format!("---\n{}\n---\n\n", fm.trim_end()));
+
+    let path_params = extract_section(body, "## Path Parameters");
+    out.push_str("## Path Parameters\n");
+    if let Some(section) = path_params {
+        out.push_str(section.trim());
+        out.push('\n');
+    } else {
+        out.push_str("*(None)*\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Required Request Body Fields\n");
+    match extract_required_body_rows(body) {
+        Some(table) if !table.is_empty() => {
+            out.push_str("| Property | Required | Type | Description |\n");
+            out.push_str("| :--- | :---: | :--- | :--- |\n");
+            for row in table {
+                out.push_str(&row);
+                out.push('\n');
+            }
+        }
+        _ => out.push_str("*(None)*\n"),
+    }
+    if resolved.source != ".local" {
+        out = format!("> Source: `{}`\n\n{}", resolved.source, out);
+    }
+    output::print_markdown(&out);
+    Ok(())
+}
+
+fn extract_section<'a>(body: &'a str, heading: &str) -> Option<&'a str> {
+    let start = body.find(heading)?;
+    let rest = &body[start + heading.len()..];
+    let next_heading = rest.find("\n## ").unwrap_or(rest.len());
+    Some(rest[..next_heading].trim())
+}
+
+fn extract_required_body_rows(body: &str) -> Option<Vec<String>> {
+    let section = extract_section(body, "## Request Body")?;
+    let mut rows = Vec::new();
+    for line in section.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('|') && trimmed.contains("| Yes |") {
+            rows.push(trimmed.to_string());
+        }
+    }
+    Some(rows)
+}
+
+fn suggest_routes(route: &str) -> Result<Vec<String>, ApixError> {
+    let (sources, namespace, version, _) = resolver::route_resolution_inputs(route, None)?;
+    let source = sources
+        .first()
+        .cloned()
+        .unwrap_or_else(|| ".local".to_string());
+    let ns_root = resolver::source_root(&source)?
+        .join(&namespace)
+        .join(&version);
+    if !ns_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    for path in resolver::walk_markdown_under(&ns_root) {
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(&ns_root) else {
+            continue;
+        };
+        let mut rel_no_ext = rel.to_path_buf();
+        rel_no_ext.set_extension("");
+        let candidate = format!(
+            "{}/{}/{}/{}",
+            source,
+            namespace,
+            version,
+            rel_no_ext.to_string_lossy()
+        );
+        if candidate.contains(route)
+            || route
+                .split('/')
+                .any(|segment| !segment.is_empty() && candidate.contains(segment))
+        {
+            out.push(candidate);
+        }
+        if out.len() >= 5 {
+            break;
+        }
+    }
+    Ok(out)
+}

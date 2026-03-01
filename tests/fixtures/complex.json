@@ -1,0 +1,97 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Complex API",
+    "version": "v2",
+    "description": "Complex schema fixture"
+  },
+  "servers": [
+    { "url": "https://complex.example.com" }
+  ],
+  "paths": {
+    "/events": {
+      "post": {
+        "summary": "Create event",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["type", "payload"],
+                "properties": {
+                  "type": { "type": "string", "enum": ["click", "view"] },
+                  "payload": { "$ref": "#/components/schemas/EventPayload" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Accepted" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaseEntity": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" }
+        }
+      },
+      "User": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseEntity" },
+          {
+            "type": "object",
+            "required": ["email"],
+            "properties": {
+              "email": { "type": "string" },
+              "role": { "type": "string", "enum": ["admin", "member"] }
+            }
+          }
+        ]
+      },
+      "EventPayload": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/ClickPayload" },
+          { "$ref": "#/components/schemas/ViewPayload" }
+        ]
+      },
+      "ClickPayload": {
+        "type": "object",
+        "required": ["x", "y"],
+        "properties": {
+          "x": { "type": "number" },
+          "y": { "type": "number" }
+        }
+      },
+      "ViewPayload": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "Result": {
+        "anyOf": [
+          { "$ref": "#/components/schemas/User" },
+          { "$ref": "#/components/schemas/Error" }
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

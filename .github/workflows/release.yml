@@ -1,0 +1,159 @@
+name: release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example: v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build-${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.meta.outputs.tag }}"
+          target="${{ matrix.target }}"
+          mkdir -p dist
+          cp "target/${target}/release/apix" "dist/apix"
+          tar -C dist -czf "apix-${tag}-${target}.tar.gz" apix
+          rm -f dist/apix
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apix-${{ steps.meta.outputs.tag }}-${{ matrix.target }}
+          path: apix-${{ steps.meta.outputs.tag }}-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: publish-release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: apix-${{ steps.meta.outputs.tag }}-*
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum apix-${{ steps.meta.outputs.tag }}-*.tar.gz > SHA256SUMS
+
+      - name: Upload assets to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          overwrite_files: true
+          files: |
+            release-assets/apix-${{ steps.meta.outputs.tag }}-*.tar.gz
+            release-assets/SHA256SUMS
+
+  update-homebrew:
+    name: update-homebrew-formula
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute source tarball SHA256
+        id: sha
+        shell: bash
+        run: |
+          tag="${{ steps.meta.outputs.tag }}"
+          tarball_url="https://github.com/apix-sh/cli/archive/refs/tags/${tag}.tar.gz"
+          sha256=$(curl -sL "${tarball_url}" | sha256sum | awk '{print $1}')
+          echo "sha256=${sha256}" >> "$GITHUB_OUTPUT"
+          echo "url=${tarball_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew formula
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.meta.outputs.tag }}"
+          url="${{ steps.sha.outputs.url }}"
+          sha256="${{ steps.sha.outputs.sha256 }}"
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/apix-sh/homebrew-apix.git"
+          cd homebrew-apix
+
+          sed -i "s|url \".*\"|url \"${url}\"|" Formula/apix.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${sha256}\"|" Formula/apix.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/apix.rb
+          git commit -m "Update apix to ${tag}"
+          git push
