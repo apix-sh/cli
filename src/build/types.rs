@@ -120,15 +120,15 @@ fn collect_properties(schema: &Schema, namespace: &str, version: &str) -> Vec<Pr
 
 fn prop_type_and_description(
     prop_schema: &ReferenceOr<Box<Schema>>,
-    namespace: &str,
-    version: &str,
+    _namespace: &str,
+    _version: &str,
 ) -> (String, String) {
     match prop_schema {
         ReferenceOr::Reference { reference } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
             (
-                format!("ref:{name}"),
-                format!("`apix peek {namespace}/{version}/_types/{name}`"),
+                format!("[{name}]({name}.md)"),
+                String::new(),
             )
         }
         ReferenceOr::Item(inner) => {
@@ -155,17 +155,17 @@ fn string_enum_values(schema: &Schema) -> Option<Vec<String>> {
     }
 }
 
-fn variant_links(schema: &Schema, namespace: &str, version: &str) -> Option<String> {
+fn variant_links(schema: &Schema, _namespace: &str, _version: &str) -> Option<String> {
     let refs: Vec<String> = match &schema.schema_kind {
         SchemaKind::OneOf { one_of } => one_of
             .iter()
             .filter_map(ref_name)
-            .map(|name| format!("- `apix peek {namespace}/{version}/_types/{name}`"))
+            .map(|name| format!("- [{name}]({name}.md)"))
             .collect(),
         SchemaKind::AnyOf { any_of } => any_of
             .iter()
             .filter_map(ref_name)
-            .map(|name| format!("- `apix peek {namespace}/{version}/_types/{name}`"))
+            .map(|name| format!("- [{name}]({name}.md)"))
             .collect(),
         _ => return None,
     };
@@ -202,7 +202,7 @@ pub(crate) fn kind_to_string(kind: &SchemaKind) -> String {
                     match items {
                         ReferenceOr::Reference { reference } => {
                             let name = reference.rsplit('/').next().unwrap_or(reference);
-                            format!("array<{name}>")
+                            format!("array<[{name}]({name}.md)>")
                         }
                         ReferenceOr::Item(item) => {
                             format!("array<{}>", kind_to_string(&item.schema_kind))

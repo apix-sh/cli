@@ -160,9 +160,16 @@ fn emit_operation(
         return Ok(());
     };
 
-    let (path_params, query_params) = collect_parameters(path_item, op);
+    let depth = path.trim_start_matches('/').split('/').filter(|s| !s.is_empty()).count();
+    let type_dir_rel = if depth == 0 {
+        "_types".to_string()
+    } else {
+        format!("{}_types", "../".repeat(depth))
+    };
+
+    let (path_params, query_params) = collect_parameters(path_item, op, &type_dir_rel);
     let content_type = request_content_type(op).unwrap_or_else(|| "application/json".to_string());
-    let request_body = request_body_text(op, namespace, &parsed.version);
+    let request_body = request_body_text(op, namespace, &parsed.version, &type_dir_rel);
     let responses = response_rows(op);
 
     let summary = op.summary.as_deref().unwrap_or(method);
@@ -207,7 +214,7 @@ fn route_dir(root: &Path, path: &str) -> PathBuf {
     out
 }
 
-fn collect_parameters(path_item: &PathItem, op: &Operation) -> (Vec<ParamRow>, Vec<ParamRow>) {
+fn collect_parameters(path_item: &PathItem, op: &Operation, type_dir_rel: &str) -> (Vec<ParamRow>, Vec<ParamRow>) {
     let mut path_rows = Vec::new();
     let mut query_rows = Vec::new();
 
@@ -224,22 +231,22 @@ fn collect_parameters(path_item: &PathItem, op: &Operation) -> (Vec<ParamRow>, V
                     .unwrap_or(reference)
                     .to_string();
                 query_rows.push(ParamRow {
-                    name,
+                    name: name.clone(),
                     required: "Unknown".to_string(),
-                    param_type: "ref".to_string(),
-                    description: format!("Reference: {reference}"),
+                    param_type: format!("[{name}]({type_dir_rel}/{name}.md)"),
+                    description: String::new(),
                 });
             }
             ReferenceOr::Item(param) => match param {
                 Parameter::Query { parameter_data, .. } => {
-                    query_rows.push(row_from_parameter_data(parameter_data));
+                    query_rows.push(row_from_parameter_data(parameter_data, type_dir_rel));
                 }
                 Parameter::Path { parameter_data, .. } => {
-                    path_rows.push(row_from_parameter_data(parameter_data));
+                    path_rows.push(row_from_parameter_data(parameter_data, type_dir_rel));
                 }
                 Parameter::Header { parameter_data, .. }
                 | Parameter::Cookie { parameter_data, .. } => {
-                    query_rows.push(row_from_parameter_data(parameter_data));
+                    query_rows.push(row_from_parameter_data(parameter_data, type_dir_rel));
                 }
             },
         }
@@ -248,12 +255,12 @@ fn collect_parameters(path_item: &PathItem, op: &Operation) -> (Vec<ParamRow>, V
     (path_rows, query_rows)
 }
 
-fn row_from_parameter_data(data: &openapiv3::ParameterData) -> ParamRow {
+fn row_from_parameter_data(data: &openapiv3::ParameterData, type_dir_rel: &str) -> ParamRow {
     let ty = match &data.format {
         ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
             ReferenceOr::Reference { reference } => {
                 let name = reference.rsplit('/').next().unwrap_or(reference);
-                format!("ref:{name}")
+                format!("[{name}]({type_dir_rel}/{name}.md)")
             }
             ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind),
         },
@@ -276,12 +283,12 @@ fn request_content_type(op: &Operation) -> Option<String> {
     }
 }
 
-fn request_body_text(op: &Operation, namespace: &str, version: &str) -> String {
+fn request_body_text(op: &Operation, namespace: &str, version: &str, type_dir_rel: &str) -> String {
     match &op.request_body {
         None => String::new(),
         Some(ReferenceOr::Reference { reference }) => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
-            format!("`apix peek {namespace}/{version}/_types/{name}`")
+            format!("[{name}]({type_dir_rel}/{name}.md)")
         }
         Some(ReferenceOr::Item(item)) => {
             if item.content.is_empty() {
@@ -294,14 +301,14 @@ fn request_body_text(op: &Operation, namespace: &str, version: &str) -> String {
             }
             if let Some((ctype, media_type)) = item.content.iter().next() {
                 out.push('\n');
-                out.push_str(&inline_body_doc(ctype, media_type, namespace, version));
+                out.push_str(&inline_body_doc(ctype, media_type, namespace, version, type_dir_rel));
             }
             out.trim_end().to_string()
         }
     }
 }
 
-fn inline_body_doc(ctype: &str, media_type: &MediaType, namespace: &str, version: &str) -> String {
+fn inline_body_doc(ctype: &str, media_type: &MediaType, _namespace: &str, _version: &str, type_dir_rel: &str) -> String {
     let Some(schema_ref) = &media_type.schema else {
         return format!("No schema provided for `{ctype}`.");
     };
@@ -312,11 +319,11 @@ fn inline_body_doc(ctype: &str, media_type: &MediaType, namespace: &str, version
         ReferenceOr::Reference { reference } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
             out.push_str(&format!(
-                "`apix peek {namespace}/{version}/_types/{name}`\n"
+                "[{name}]({type_dir_rel}/{name}.md)\n"
             ));
         }
         ReferenceOr::Item(schema) => {
-            let rows = schema_property_rows(schema);
+            let rows = schema_property_rows(schema, type_dir_rel);
             if !rows.is_empty() {
                 out.push_str("| Property | Required | Type | Description |\n");
                 out.push_str("| :--- | :---: | :--- | :--- |\n");
@@ -346,7 +353,7 @@ fn inline_body_doc(ctype: &str, media_type: &MediaType, namespace: &str, version
     out
 }
 
-fn schema_property_rows(schema: &Schema) -> Vec<(String, bool, String, String)> {
+fn schema_property_rows(schema: &Schema, type_dir_rel: &str) -> Vec<(String, bool, String, String)> {
     match &schema.schema_kind {
         SchemaKind::Type(Type::Object(obj)) => obj
             .properties
@@ -355,7 +362,7 @@ fn schema_property_rows(schema: &Schema) -> Vec<(String, bool, String, String)> 
                 let (ty, desc) = match prop {
                     ReferenceOr::Reference { reference } => {
                         let p = reference.rsplit('/').next().unwrap_or(reference);
-                        (format!("ref:{p}"), format!("Reference: {reference}"))
+                        (format!("[{p}]({type_dir_rel}/{p}.md)"), String::new())
                     }
                     ReferenceOr::Item(inner) => (
                         super::types::kind_to_string(&inner.schema_kind),
@@ -502,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn request_body_ref_commands_include_namespace_and_version() {
+    fn request_body_ref_generates_markdown_link() {
         let spec = r##"{
   "openapi": "3.0.0",
   "info": { "title": "T", "version": "v9" },
@@ -544,8 +551,8 @@ mod tests {
         let parsed = parse_spec(spec_path.to_str().expect("path")).expect("parse");
         let _ = generate_routes(&parsed, &out_root, "demo").expect("generate");
         let rendered = std::fs::read_to_string(out_root.join("items/POST.md")).expect("read");
-        assert!(rendered.contains("apix peek demo/v9/_types/ItemCreate"));
-        assert!(!rendered.contains("apix peek _types/ItemCreate"));
+        assert!(rendered.contains("[ItemCreate](../_types/ItemCreate.md)"));
+        assert!(!rendered.contains("apix peek"));
 
         let _ = std::fs::remove_file(spec_path);
         let _ = std::fs::remove_dir_all(out_root);
