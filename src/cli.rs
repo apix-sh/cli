@@ -2,7 +2,20 @@ use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Generator, Shell, generate};
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "apix", version, about = "API vault CLI")]
+#[command(
+    name = "apix",
+    version,
+    about = "API Explorer for Agents (and Humans)",
+    long_about = "API Explorer for Agents (and Humans)\n\nLocal-first, progressive disclosure API discovery and browsing CLI for the agentic era.",
+    before_help = r#"
+
+ █████╗ ██████╗ ██╗██╗  ██╗
+██╔══██╗██╔══██╗██║╚██╗██╔╝
+███████║██████╔╝██║ ╚███╔╝
+██╔══██║██╔═══╝ ██║ ██╔██╗
+██║  ██║██║     ██║██╔╝ ██╗
+╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝"#
+)]
 pub struct Cli {
     #[arg(long = "no-color", global = true)]
     pub no_color: bool,
