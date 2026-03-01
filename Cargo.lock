@@ -68,7 +68,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "apix"
+name = "apix-cli"
 version = "0.1.0"
 dependencies = [
  "askama",
