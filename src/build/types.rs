@@ -71,7 +71,7 @@ fn schema_details(
             Vec::new(),
         ),
         ReferenceOr::Item(schema) => {
-            let schema_type = kind_to_string(&schema.schema_kind);
+            let schema_type = kind_to_string(&schema.schema_kind, ".");
             let mut description = schema.schema_data.description.clone().unwrap_or_default();
             if let Some(variants) = variant_links(schema, namespace, parsed) {
                 if !description.is_empty() {
@@ -148,7 +148,7 @@ fn prop_type_and_description(
             )
         }
         ReferenceOr::Item(inner) => {
-            let ptype = kind_to_string(&inner.schema_kind);
+            let ptype = kind_to_string(&inner.schema_kind, ".");
             let mut description = inner.schema_data.description.clone().unwrap_or_default();
             if let Some(enum_values) = string_enum_values(inner) {
                 if !description.is_empty() {
@@ -196,7 +196,7 @@ fn variant_links(schema: &Schema, _namespace: &str, _parsed: &ParsedSpec) -> Opt
     }
 }
 
-pub(crate) fn kind_to_string(kind: &SchemaKind) -> String {
+pub(crate) fn kind_to_string(kind: &SchemaKind, type_dir_rel: &str) -> String {
     match kind {
         SchemaKind::Type(ty) => match ty {
             Type::String(_) => "string".to_string(),
@@ -208,10 +208,10 @@ pub(crate) fn kind_to_string(kind: &SchemaKind) -> String {
                     match items {
                         ReferenceOr::Reference { reference } => {
                             let name = reference.rsplit('/').next().unwrap_or(reference);
-                            format!("array<[{name}]({name}.md)>")
+                            format!("array<[{name}]({type_dir_rel}/{name}.md)>")
                         }
                         ReferenceOr::Item(item) => {
-                            format!("array<{}>", kind_to_string(&item.schema_kind))
+                            format!("array<{}>", kind_to_string(&item.schema_kind, type_dir_rel))
                         }
                     }
                 } else {

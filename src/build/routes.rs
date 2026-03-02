@@ -4,7 +4,7 @@ use openapiv3::{
     MediaType, Operation, Parameter, ParameterSchemaOrContent, PathItem, ReferenceOr, Response,
     Schema, SchemaKind, StatusCode, Type,
 };
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +22,8 @@ struct ParamRow {
 struct ResponseRow {
     status: String,
     description: String,
+    headers: Vec<ParamRow>,
+    content: String,
 }
 
 #[derive(Template)]
@@ -176,7 +178,7 @@ fn emit_operation(
     let (path_params, query_params, header_params, cookie_params) = collect_parameters(path_item, op, &type_dir_rel);
     let content_type = request_content_type(op).unwrap_or_else(|| "application/json".to_string());
     let request_body = request_body_text(op, namespace, &parsed.version, &type_dir_rel);
-    let responses = response_rows(op);
+    let responses = response_rows(op, namespace, &parsed.version, &type_dir_rel);
 
     let summary = op.summary.as_deref().unwrap_or(method);
     let description = op.description.as_deref().unwrap_or_default();
@@ -288,7 +290,7 @@ fn row_from_parameter_data(
                 let name = reference.rsplit('/').next().unwrap_or(reference);
                 format!("[{name}]({type_dir_rel}/{name}.md)")
             }
-            ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind),
+            ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind, type_dir_rel),
         },
         ParameterSchemaOrContent::Content(content) => {
             if let Some((ctype, _media_type)) = content.iter().next() {
@@ -357,20 +359,20 @@ fn request_body_text(op: &Operation, namespace: &str, version: &str, type_dir_re
             
             for (ctype, media_type) in item.content.iter() {
                 out.push('\n');
-                out.push_str(&inline_body_doc(ctype, media_type, namespace, version, type_dir_rel));
+                out.push_str(&inline_body_doc("### Inline Request Schema", ctype, media_type, namespace, version, type_dir_rel));
             }
             out.trim_end().to_string()
         }
     }
 }
 
-fn inline_body_doc(ctype: &str, media_type: &MediaType, _namespace: &str, _version: &str, type_dir_rel: &str) -> String {
+fn inline_body_doc(title_prefix: &str, ctype: &str, media_type: &MediaType, _namespace: &str, _version: &str, type_dir_rel: &str) -> String {
     let Some(schema_ref) = &media_type.schema else {
         return format!("No schema provided for `{ctype}`.");
     };
 
     let mut out = String::new();
-    out.push_str(&format!("### Inline Request Schema (`{ctype}`)\n"));
+    out.push_str(&format!("{title_prefix} (`{ctype}`)\n"));
     match schema_ref {
         ReferenceOr::Reference { reference } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
@@ -393,26 +395,32 @@ fn inline_body_doc(ctype: &str, media_type: &MediaType, _namespace: &str, _versi
                     ));
                 }
             } else {
-                out.push_str("*(No object properties found)*\n");
+                let kind_str = super::types::kind_to_string(&schema.schema_kind, type_dir_rel);
+                if kind_str.starts_with("array<") {
+                    out.push_str(&format!("{kind_str}\n"));
+                } else {
+                    out.push_str("*(No object properties found)*\n");
+                }
             }
 
-            out.push('\n');
-            out.push_str("### Example Payload\n");
-            
-            let ex = schema_example_json(schema);
-            if ctype == "application/x-www-form-urlencoded" {
-                out.push_str("```text\n");
-                out.push_str(&url_encoded_example(&ex));
-                out.push_str("\n```\n");
-            } else if ctype == "multipart/form-data" {
-                out.push_str("```text\n");
-                out.push_str(&multipart_example(&ex));
-                out.push_str("\n```\n");
-            } else {
-                out.push_str("```json\n");
-                let rendered = serde_json::to_string_pretty(&ex).unwrap_or_else(|_| "{}".to_string());
-                out.push_str(&rendered);
-                out.push_str("\n```\n");
+            let ex = media_type.example.clone().or_else(|| schema_example_json(schema));
+            if let Some(ex_val) = ex {
+                out.push('\n');
+                out.push_str("#### Example Payload\n");
+                if ctype == "application/x-www-form-urlencoded" {
+                    out.push_str("```text\n");
+                    out.push_str(&url_encoded_example(&ex_val));
+                    out.push_str("\n```\n");
+                } else if ctype == "multipart/form-data" {
+                    out.push_str("```text\n");
+                    out.push_str(&multipart_example(&ex_val));
+                    out.push_str("\n```\n");
+                } else {
+                    out.push_str("```json\n");
+                    let rendered = serde_json::to_string_pretty(&ex_val).unwrap_or_else(|_| "{}".to_string());
+                    out.push_str(&rendered);
+                    out.push_str("\n```\n");
+                }
             }
         }
     }
@@ -432,7 +440,7 @@ fn schema_property_rows(schema: &Schema, type_dir_rel: &str) -> Vec<(String, boo
                         (format!("[{p}]({type_dir_rel}/{p}.md)"), String::new())
                     }
                     ReferenceOr::Item(inner) => (
-                        super::types::kind_to_string(&inner.schema_kind),
+                        super::types::kind_to_string(&inner.schema_kind, type_dir_rel),
                         inner.schema_data.description.clone().unwrap_or_default(),
                     ),
                 };
@@ -448,42 +456,14 @@ fn schema_property_rows(schema: &Schema, type_dir_rel: &str) -> Vec<(String, boo
     }
 }
 
-fn schema_example_json(schema: &Schema) -> Value {
-    match &schema.schema_kind {
-        SchemaKind::Type(Type::Object(obj)) => {
-            let mut map = Map::new();
-            for (name, prop) in &obj.properties {
-                let value = match prop {
-                    ReferenceOr::Reference { .. } => Value::String("ref-value".to_string()),
-                    ReferenceOr::Item(inner) => schema_example_json(inner),
-                };
-                map.insert(name.clone(), value);
-            }
-            Value::Object(map)
-        }
-        SchemaKind::Type(Type::Array(arr)) => {
-            let item = arr
-                .items
-                .as_ref()
-                .map(|i| match i {
-                    ReferenceOr::Reference { .. } => Value::String("ref-item".to_string()),
-                    ReferenceOr::Item(schema) => schema_example_json(schema),
-                })
-                .unwrap_or(Value::Null);
-            Value::Array(vec![item])
-        }
-        SchemaKind::Type(Type::String(st)) => {
-            if let Some(Some(first)) = st.enumeration.first() {
-                Value::String(first.clone())
-            } else {
-                Value::String("string".to_string())
-            }
-        }
-        SchemaKind::Type(Type::Integer(_)) => json!(0),
-        SchemaKind::Type(Type::Number(_)) => json!(0.0),
-        SchemaKind::Type(Type::Boolean(_)) => json!(true),
-        _ => Value::Null,
+fn schema_example_json(schema: &Schema) -> Option<Value> {
+    if let Some(ex) = &schema.schema_data.example {
+        return Some(ex.clone());
     }
+    if let Some(def) = &schema.schema_data.default {
+        return Some(def.clone());
+    }
+    None
 }
 
 fn url_encoded_example(val: &Value) -> String {
@@ -518,31 +498,95 @@ fn multipart_example(val: &Value) -> String {
     out.trim_end().to_string()
 }
 
-fn response_rows(op: &Operation) -> Vec<ResponseRow> {
+fn response_rows(op: &Operation, namespace: &str, version: &str, type_dir_rel: &str) -> Vec<ResponseRow> {
     let mut rows = Vec::new();
     for (status, response_ref) in &op.responses.responses {
         let status_text = match status {
             StatusCode::Code(code) => code.to_string(),
             StatusCode::Range(range) => format!("{range:?}xx"),
         };
+        let (desc, headers, content) = extract_response_details(response_ref, namespace, version, type_dir_rel);
         rows.push(ResponseRow {
             status: status_text,
-            description: response_description(response_ref),
+            description: desc,
+            headers,
+            content,
         });
     }
     if let Some(default) = &op.responses.default {
+        let (desc, headers, content) = extract_response_details(default, namespace, version, type_dir_rel);
         rows.push(ResponseRow {
             status: "default".to_string(),
-            description: response_description(default),
+            description: desc,
+            headers,
+            content,
         });
     }
     rows
 }
 
-fn response_description(response_ref: &ReferenceOr<Response>) -> String {
+fn extract_response_details(
+    response_ref: &ReferenceOr<Response>,
+    namespace: &str,
+    version: &str,
+    type_dir_rel: &str,
+) -> (String, Vec<ParamRow>, String) {
     match response_ref {
-        ReferenceOr::Reference { reference } => format!("Reference: {reference}"),
-        ReferenceOr::Item(item) => item.description.clone(),
+        ReferenceOr::Reference { reference } => {
+            (format!("Reference: {reference}"), Vec::new(), String::new())
+        }
+        ReferenceOr::Item(item) => {
+            let mut headers = Vec::new();
+            for (name, header_ref) in &item.headers {
+                match header_ref {
+                    ReferenceOr::Reference { reference } => {
+                        let ref_name = reference.rsplit('/').next().unwrap_or(reference);
+                        headers.push(ParamRow {
+                            name: format!("{name} (ref)"),
+                            required: "Unknown".to_string(),
+                            param_type: format!("[{ref_name}]({type_dir_rel}/{ref_name}.md)"),
+                            description: String::new(),
+                        });
+                    }
+                    ReferenceOr::Item(header) => {
+                        headers.push(row_from_header(name, header, type_dir_rel));
+                    }
+                }
+            }
+
+            let mut out = String::new();
+            for (ctype, media_type) in &item.content {
+                out.push('\n');
+                out.push_str(&inline_body_doc("#### Response Schema", ctype, media_type, namespace, version, type_dir_rel));
+            }
+
+            (item.description.clone(), headers, out.trim_start().to_string())
+        }
+    }
+}
+
+fn row_from_header(name: &str, header: &openapiv3::Header, type_dir_rel: &str) -> ParamRow {
+    let ty = match &header.format {
+        ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
+            ReferenceOr::Reference { reference } => {
+                let ref_name = reference.rsplit('/').next().unwrap_or(reference);
+                format!("[{ref_name}]({type_dir_rel}/{ref_name}.md)")
+            }
+            ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind, type_dir_rel),
+        },
+        ParameterSchemaOrContent::Content(content) => {
+            if let Some((ctype, _)) = content.iter().next() {
+                format!("content `{ctype}`")
+            } else {
+                "content".to_string()
+            }
+        }
+    };
+    ParamRow {
+        name: name.to_string(),
+        required: if header.required { "Yes" } else { "No" }.to_string(),
+        param_type: ty,
+        description: header.description.clone().unwrap_or_default(),
     }
 }
 
@@ -580,7 +624,26 @@ mod tests {
             }
           }
         },
-        "responses": { "201": { "description": "Created" } }
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "X-RateLimit": {
+                "schema": { "type": "integer" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "new_id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -600,8 +663,11 @@ mod tests {
         assert!(rendered.contains("## Path Parameters"));
         assert!(rendered.contains("## Query Parameters"));
         assert!(rendered.contains("## Request Body"));
-        assert!(rendered.contains("### Example Payload"));
-        assert!(rendered.contains("**201**"));
+        assert!(rendered.contains("### 201"));
+        assert!(rendered.contains("#### Headers"));
+        assert!(rendered.contains("X-RateLimit"));
+        assert!(rendered.contains("#### Response Schema (`application/json`)"));
+        assert!(rendered.contains("new_id"));
 
         let _ = std::fs::remove_file(spec_path);
         let _ = std::fs::remove_dir_all(out_root);

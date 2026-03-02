@@ -69,5 +69,26 @@ _(None)_
 
 {% for r in responses %}
 
-- **{{ r.status }}**: {{ r.description }}
-  {% endfor %}
+### {{ r.status }}
+
+{% if !r.description.is_empty() %}
+{{ r.description }}
+{% endif %}
+
+{% if !r.headers.is_empty() %}
+
+#### Headers
+
+| Name | Required | Type | Description |
+| :--- | :------: | :--- | :---------- |
+
+{% for h in r.headers -%}
+| `{{ h.name }}` | {{ h.required }} | {{ h.param_type }} | {{ h.description }} |
+{% endfor -%}
+{% endif %}
+
+{% if !r.content.is_empty() %}
+{{ r.content }}
+{% endif %}
+
+{% endfor %}
