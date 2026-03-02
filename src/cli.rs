@@ -44,8 +44,9 @@ pub enum Commands {
         no_auto_update: bool,
     },
 
-    /// Pull an API vault from the registry
+    /// Pull an API vault (or specific version) from the registry
     Pull {
+        #[arg(value_name = "NAMESPACE[/VERSION]")]
         namespace: String,
         #[arg(long)]
         source: Option<String>,
