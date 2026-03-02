@@ -1,4 +1,5 @@
 pub mod parser;
+pub mod resolver;
 pub mod routes;
 pub mod types;
 

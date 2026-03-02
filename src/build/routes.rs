@@ -48,8 +48,12 @@ pub fn generate_routes(
     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
 
     for (path, path_item_ref) in &parsed.openapi.paths.paths {
-        let ReferenceOr::Item(path_item) = path_item_ref else {
-            continue;
+        let path_item = match path_item_ref {
+            ReferenceOr::Item(item) => item,
+            ReferenceOr::Reference { reference } => {
+                let mut seen = std::collections::HashSet::new();
+                crate::build::resolver::resolve_path_item(reference, &parsed.openapi, &mut seen)?
+            }
         };
 
         emit_operation(
@@ -553,6 +557,46 @@ mod tests {
         let rendered = std::fs::read_to_string(out_root.join("items/POST.md")).expect("read");
         assert!(rendered.contains("[ItemCreate](../_types/ItemCreate.md)"));
         assert!(!rendered.contains("apix peek"));
+
+        let _ = std::fs::remove_file(spec_path);
+        let _ = std::fs::remove_dir_all(out_root);
+    }
+
+    #[test]
+    fn resolves_path_item_references() {
+        let spec = r##"{
+  "openapi": "3.0.0",
+  "info": { "title": "T", "version": "v9" },
+  "servers": [{ "url": "https://api.example.com" }],
+  "paths": {
+    "/target": {
+      "get": {
+        "summary": "Target Endpoint",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/link": {
+      "$ref": "#/paths/~1target"
+    }
+  }
+}"##;
+        let spec_path =
+            std::env::temp_dir().join(format!("apix-routes-pathref-{}.json", std::process::id()));
+        let out_root =
+            std::env::temp_dir().join(format!("apix-routes-pathref-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out_root);
+        std::fs::write(&spec_path, spec).expect("write");
+
+        let parsed = parse_spec(spec_path.to_str().expect("path")).expect("parse");
+        let _ = generate_routes(&parsed, &out_root, "demo").expect("generate");
+
+        // the resolved path item /link should have a GET.md and be identical to /target's GET.md
+        let target_rendered = std::fs::read_to_string(out_root.join("target/GET.md")).expect("read target");
+        let link_rendered = std::fs::read_to_string(out_root.join("link/GET.md")).expect("read link");
+        
+        // However, the URL inside the rendered markdown differs slightly since base_path has changed.
+        assert!(link_rendered.contains("Target Endpoint"));
+        assert!(link_rendered.contains("/link"));
 
         let _ = std::fs::remove_file(spec_path);
         let _ = std::fs::remove_dir_all(out_root);

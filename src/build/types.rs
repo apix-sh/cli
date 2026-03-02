@@ -39,7 +39,7 @@ pub fn generate_types(
 
     for (name, schema_ref) in &components.schemas {
         let (schema_type, description, properties) =
-            schema_details(schema_ref, namespace, &parsed.version);
+            schema_details(schema_ref, namespace, parsed);
 
         let tpl = TypeTemplate {
             schema_type: &schema_type,
@@ -62,7 +62,7 @@ pub fn generate_types(
 fn schema_details(
     schema_ref: &ReferenceOr<Schema>,
     namespace: &str,
-    version: &str,
+    parsed: &ParsedSpec,
 ) -> (String, String, Vec<PropertyRow>) {
     match schema_ref {
         ReferenceOr::Reference { reference } => (
@@ -73,25 +73,25 @@ fn schema_details(
         ReferenceOr::Item(schema) => {
             let schema_type = kind_to_string(&schema.schema_kind);
             let mut description = schema.schema_data.description.clone().unwrap_or_default();
-            if let Some(variants) = variant_links(schema, namespace, version) {
+            if let Some(variants) = variant_links(schema, namespace, parsed) {
                 if !description.is_empty() {
                     description.push_str("\n\n");
                 }
                 description.push_str(&variants);
             }
-            let properties = collect_properties(schema, namespace, version);
+            let properties = collect_properties(schema, namespace, parsed);
             (schema_type, description, properties)
         }
     }
 }
 
-fn collect_properties(schema: &Schema, namespace: &str, version: &str) -> Vec<PropertyRow> {
+fn collect_properties(schema: &Schema, namespace: &str, parsed: &ParsedSpec) -> Vec<PropertyRow> {
     match &schema.schema_kind {
         SchemaKind::Type(Type::Object(obj)) => {
             let mut rows = Vec::new();
             let required: HashSet<&str> = obj.required.iter().map(String::as_str).collect();
             for (prop_name, prop_schema) in &obj.properties {
-                let (ptype, desc) = prop_type_and_description(prop_schema, namespace, version);
+                let (ptype, desc) = prop_type_and_description(prop_schema, namespace, parsed);
                 rows.push(PropertyRow {
                     name: prop_name.to_string(),
                     required: if required.contains(prop_name.as_str()) {
@@ -108,8 +108,24 @@ fn collect_properties(schema: &Schema, namespace: &str, version: &str) -> Vec<Pr
         SchemaKind::AllOf { all_of } => {
             let mut rows = Vec::new();
             for item in all_of {
-                if let ReferenceOr::Item(inner) = item {
-                    rows.extend(collect_properties(inner, namespace, version));
+                match item {
+                    ReferenceOr::Item(inner) => {
+                        rows.extend(collect_properties(inner, namespace, parsed));
+                    }
+                    ReferenceOr::Reference { reference } => {
+                        let mut seen = HashSet::new();
+                        if let Ok(resolved) = crate::build::resolver::resolve_schema(reference, &parsed.openapi, &mut seen) {
+                            rows.extend(collect_properties(resolved, namespace, parsed));
+                        } else {
+                            let name = reference.rsplit('/').next().unwrap_or(reference);
+                            rows.push(PropertyRow {
+                                name: format!("(ref: {name})"),
+                                required: "Unknown".to_string(),
+                                prop_type: format!("[{name}]({name}.md)"),
+                                description: "Unresolved reference".to_string(),
+                            });
+                        }
+                    }
                 }
             }
             rows
@@ -121,7 +137,7 @@ fn collect_properties(schema: &Schema, namespace: &str, version: &str) -> Vec<Pr
 fn prop_type_and_description(
     prop_schema: &ReferenceOr<Box<Schema>>,
     _namespace: &str,
-    _version: &str,
+    _parsed: &ParsedSpec,
 ) -> (String, String) {
     match prop_schema {
         ReferenceOr::Reference { reference } => {
@@ -155,38 +171,28 @@ fn string_enum_values(schema: &Schema) -> Option<Vec<String>> {
     }
 }
 
-fn variant_links(schema: &Schema, _namespace: &str, _version: &str) -> Option<String> {
-    let refs: Vec<String> = match &schema.schema_kind {
-        SchemaKind::OneOf { one_of } => one_of
-            .iter()
-            .filter_map(ref_name)
-            .map(|name| format!("- [{name}]({name}.md)"))
-            .collect(),
-        SchemaKind::AnyOf { any_of } => any_of
-            .iter()
-            .filter_map(ref_name)
-            .map(|name| format!("- [{name}]({name}.md)"))
-            .collect(),
+fn variant_links(schema: &Schema, _namespace: &str, _parsed: &ParsedSpec) -> Option<String> {
+    let variants: Vec<&ReferenceOr<Schema>> = match &schema.schema_kind {
+        SchemaKind::OneOf { one_of } => one_of.iter().collect(),
+        SchemaKind::AnyOf { any_of } => any_of.iter().collect(),
         _ => return None,
     };
+
+    let refs: Vec<String> = variants
+        .iter()
+        .map(|item| match item {
+            ReferenceOr::Reference { reference } => {
+                let name = reference.rsplit('/').next().unwrap_or(reference);
+                format!("- [{name}]({name}.md)")
+            }
+            ReferenceOr::Item(_) => "- (Inline Schema)".to_string(),
+        })
+        .collect();
 
     if refs.is_empty() {
         None
     } else {
         Some(format!("Variants:\n{}", refs.join("\n")))
-    }
-}
-
-fn ref_name(item: &ReferenceOr<Schema>) -> Option<String> {
-    match item {
-        ReferenceOr::Reference { reference } => Some(
-            reference
-                .rsplit('/')
-                .next()
-                .unwrap_or(reference)
-                .to_string(),
-        ),
-        ReferenceOr::Item(_) => None,
     }
 }
 
@@ -265,6 +271,52 @@ mod tests {
         assert!(rendered.contains("# Thing"));
         assert!(rendered.contains("Allowed values: a, b"));
         assert!(!rendered.contains("\n\n| `id`"));
+
+        let _ = std::fs::remove_file(spec_path);
+        let _ = std::fs::remove_dir_all(out_root);
+    }
+
+    #[test]
+    fn generates_composite_schema_with_refs() {
+        let spec = r##"{
+  "openapi": "3.0.0",
+  "info": { "title": "T", "version": "v1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "BaseThing": {
+        "type": "object",
+        "properties": {
+          "base_val": { "type": "string" }
+        }
+      },
+      "ExtendedThing": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BaseThing" },
+          {
+            "type": "object",
+            "properties": {
+              "extended_val": { "type": "string" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}"##;
+        let spec_path =
+            std::env::temp_dir().join(format!("apix-types-ext-{}.json", std::process::id()));
+        let out_root = std::env::temp_dir().join(format!("apix-types-ext-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out_root);
+        std::fs::write(&spec_path, spec).expect("write");
+
+        let parsed = parse_spec(spec_path.to_str().expect("path")).expect("parse");
+        let n = generate_types(&parsed, &out_root, "demo").expect("generate");
+        assert_eq!(n, 2);
+
+        let rendered = std::fs::read_to_string(out_root.join("_types/ExtendedThing.md")).expect("read");
+        assert!(rendered.contains("base_val"));
+        assert!(rendered.contains("extended_val"));
 
         let _ = std::fs::remove_file(spec_path);
         let _ = std::fs::remove_dir_all(out_root);
