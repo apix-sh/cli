@@ -96,4 +96,26 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_grep_end_to_end() {
+        use crate::test_env;
+        let id = std::process::id();
+        let home = std::env::temp_dir().join(format!("apix-search-env-{}", id));
+
+        let core_items = home.join("vaults/core/demo-api/v1/items");
+        std::fs::create_dir_all(&core_items).expect("mkdir");
+        std::fs::write(core_items.join("GET.md"), "# Get Item\nFind by ID\n").expect("write");
+        std::fs::write(core_items.join("_metadata.md"), "").expect("write");
+
+        test_env::set_var("APIX_HOME", &home);
+
+        // This will print to stdout in the test, which cargo captures
+        let res = grep("demo-api", "Find", 10, None);
+        assert!(res.is_ok());
+
+        test_env::remove_var("APIX_HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

@@ -41,3 +41,4 @@ opt-level = "z"
 [dev-dependencies]
 serial_test = "3"
 mockito = "1"
+indexmap = "2.13.0"
