@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/apix-sh/cli/compare/v0.1.1...v0.1.2) - 2026-03-02
+
+### Fixed
+
+- enhance route documentation to include response headers, content schemas
+- Add support for header and cookie parameters and enhance request body examples with serialization hints and varied content types.
+- Introduce a resolver module to handle OpenAPI `$ref` references for path items and schemas during build.
+
 ## [0.1.1](https://github.com/apix-sh/cli/compare/v0.1.0...v0.1.1) - 2026-03-01
 
 ### Fixed
