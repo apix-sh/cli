@@ -35,6 +35,8 @@ struct RouteTemplate<'a> {
     description: &'a str,
     path_params: &'a [ParamRow],
     query_params: &'a [ParamRow],
+    header_params: &'a [ParamRow],
+    cookie_params: &'a [ParamRow],
     request_body: &'a str,
     responses: &'a [ResponseRow],
 }
@@ -171,7 +173,7 @@ fn emit_operation(
         format!("{}_types", "../".repeat(depth))
     };
 
-    let (path_params, query_params) = collect_parameters(path_item, op, &type_dir_rel);
+    let (path_params, query_params, header_params, cookie_params) = collect_parameters(path_item, op, &type_dir_rel);
     let content_type = request_content_type(op).unwrap_or_else(|| "application/json".to_string());
     let request_body = request_body_text(op, namespace, &parsed.version, &type_dir_rel);
     let responses = response_rows(op);
@@ -189,6 +191,8 @@ fn emit_operation(
         description,
         path_params: &path_params,
         query_params: &query_params,
+        header_params: &header_params,
+        cookie_params: &cookie_params,
         request_body: &request_body,
         responses: &responses,
     };
@@ -218,9 +222,20 @@ fn route_dir(root: &Path, path: &str) -> PathBuf {
     out
 }
 
-fn collect_parameters(path_item: &PathItem, op: &Operation, type_dir_rel: &str) -> (Vec<ParamRow>, Vec<ParamRow>) {
+fn collect_parameters(
+    path_item: &PathItem,
+    op: &Operation,
+    type_dir_rel: &str,
+) -> (
+    Vec<ParamRow>,
+    Vec<ParamRow>,
+    Vec<ParamRow>,
+    Vec<ParamRow>,
+) {
     let mut path_rows = Vec::new();
     let mut query_rows = Vec::new();
+    let mut header_rows = Vec::new();
+    let mut cookie_rows = Vec::new();
 
     let mut all_params = Vec::new();
     all_params.extend(path_item.parameters.iter());
@@ -235,31 +250,38 @@ fn collect_parameters(path_item: &PathItem, op: &Operation, type_dir_rel: &str) 
                     .unwrap_or(reference)
                     .to_string();
                 query_rows.push(ParamRow {
-                    name: name.clone(),
+                    name: format!("{} (unresolved)", name),
                     required: "Unknown".to_string(),
                     param_type: format!("[{name}]({type_dir_rel}/{name}.md)"),
                     description: String::new(),
                 });
             }
             ReferenceOr::Item(param) => match param {
-                Parameter::Query { parameter_data, .. } => {
-                    query_rows.push(row_from_parameter_data(parameter_data, type_dir_rel));
+                Parameter::Query { parameter_data, style, allow_reserved, .. } => {
+                    query_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), Some(*allow_reserved)));
                 }
-                Parameter::Path { parameter_data, .. } => {
-                    path_rows.push(row_from_parameter_data(parameter_data, type_dir_rel));
+                Parameter::Path { parameter_data, style } => {
+                    path_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), None));
                 }
-                Parameter::Header { parameter_data, .. }
-                | Parameter::Cookie { parameter_data, .. } => {
-                    query_rows.push(row_from_parameter_data(parameter_data, type_dir_rel));
+                Parameter::Header { parameter_data, style } => {
+                    header_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), None));
+                }
+                Parameter::Cookie { parameter_data, style } => {
+                    cookie_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), None));
                 }
             },
         }
     }
 
-    (path_rows, query_rows)
+    (path_rows, query_rows, header_rows, cookie_rows)
 }
 
-fn row_from_parameter_data(data: &openapiv3::ParameterData, type_dir_rel: &str) -> ParamRow {
+fn row_from_parameter_data(
+    data: &openapiv3::ParameterData,
+    type_dir_rel: &str,
+    style: Option<String>,
+    allow_reserved: Option<bool>,
+) -> ParamRow {
     let ty = match &data.format {
         ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
             ReferenceOr::Reference { reference } => {
@@ -268,14 +290,43 @@ fn row_from_parameter_data(data: &openapiv3::ParameterData, type_dir_rel: &str) 
             }
             ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind),
         },
-        ParameterSchemaOrContent::Content(_) => "content".to_string(),
+        ParameterSchemaOrContent::Content(content) => {
+            if let Some((ctype, _media_type)) = content.iter().next() {
+                format!("content `{ctype}`")
+            } else {
+                "content".to_string()
+            }
+        }
     };
+
+    let mut hints = Vec::new();
+    if let Some(s) = style {
+        hints.push(format!("style={s}"));
+    }
+    if let Some(explode) = data.explode {
+        hints.push(format!("explode={explode}"));
+    }
+    if let Some(allow) = allow_reserved {
+        if allow {
+            hints.push("allowReserved=true".to_string());
+        }
+    }
+
+    let mut desc = data.description.clone().unwrap_or_default();
+    if !hints.is_empty() {
+        let hint_str = format!("*Serialization: {}*", hints.join(", "));
+        if desc.is_empty() {
+            desc = hint_str;
+        } else {
+            desc.push_str(&format!("<br/>{}", hint_str));
+        }
+    }
 
     ParamRow {
         name: data.name.clone(),
         required: if data.required { "Yes" } else { "No" }.to_string(),
         param_type: ty,
-        description: data.description.clone().unwrap_or_default(),
+        description: desc,
     }
 }
 
@@ -303,7 +354,8 @@ fn request_body_text(op: &Operation, namespace: &str, version: &str, type_dir_re
             for ctype in item.content.keys() {
                 out.push_str(&format!("- `{ctype}`\n"));
             }
-            if let Some((ctype, media_type)) = item.content.iter().next() {
+            
+            for (ctype, media_type) in item.content.iter() {
                 out.push('\n');
                 out.push_str(&inline_body_doc(ctype, media_type, namespace, version, type_dir_rel));
             }
@@ -346,11 +398,22 @@ fn inline_body_doc(ctype: &str, media_type: &MediaType, _namespace: &str, _versi
 
             out.push('\n');
             out.push_str("### Example Payload\n");
-            out.push_str("```json\n");
+            
             let ex = schema_example_json(schema);
-            let rendered = serde_json::to_string_pretty(&ex).unwrap_or_else(|_| "{}".to_string());
-            out.push_str(&rendered);
-            out.push_str("\n```\n");
+            if ctype == "application/x-www-form-urlencoded" {
+                out.push_str("```text\n");
+                out.push_str(&url_encoded_example(&ex));
+                out.push_str("\n```\n");
+            } else if ctype == "multipart/form-data" {
+                out.push_str("```text\n");
+                out.push_str(&multipart_example(&ex));
+                out.push_str("\n```\n");
+            } else {
+                out.push_str("```json\n");
+                let rendered = serde_json::to_string_pretty(&ex).unwrap_or_else(|_| "{}".to_string());
+                out.push_str(&rendered);
+                out.push_str("\n```\n");
+            }
         }
     }
 
@@ -421,6 +484,38 @@ fn schema_example_json(schema: &Schema) -> Value {
         SchemaKind::Type(Type::Boolean(_)) => json!(true),
         _ => Value::Null,
     }
+}
+
+fn url_encoded_example(val: &Value) -> String {
+    let mut pairs = Vec::new();
+    if let Value::Object(map) = val {
+        for (k, v) in map {
+            let val_str = match v {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            pairs.push(format!("{}={}", k, val_str));
+        }
+    }
+    pairs.join("&")
+}
+
+fn multipart_example(val: &Value) -> String {
+    let mut out = String::new();
+    if let Value::Object(map) = val {
+        for (k, v) in map {
+            out.push_str("--boundary\n");
+            out.push_str(&format!("Content-Disposition: form-data; name=\"{}\"\n\n", k));
+            let val_str = match v {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            out.push_str(&val_str);
+            out.push('\n');
+        }
+        out.push_str("--boundary--\n");
+    }
+    out.trim_end().to_string()
 }
 
 fn response_rows(op: &Operation) -> Vec<ResponseRow> {
@@ -591,7 +686,7 @@ mod tests {
         let _ = generate_routes(&parsed, &out_root, "demo").expect("generate");
 
         // the resolved path item /link should have a GET.md and be identical to /target's GET.md
-        let target_rendered = std::fs::read_to_string(out_root.join("target/GET.md")).expect("read target");
+        let _target_rendered = std::fs::read_to_string(out_root.join("target/GET.md")).expect("read target");
         let link_rendered = std::fs::read_to_string(out_root.join("link/GET.md")).expect("read link");
         
         // However, the URL inside the rendered markdown differs slightly since base_path has changed.
