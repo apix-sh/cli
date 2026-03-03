@@ -242,3 +242,68 @@ fn looks_like_legacy_namespace(path: &std::path::Path) -> Result<bool, ApixError
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_source_name_checks() {
+        assert!(Config::validate_source_name("acme").is_ok());
+        assert!(Config::validate_source_name("acme-dev").is_ok());
+
+        assert!(Config::validate_source_name("").is_err());
+        assert!(Config::validate_source_name("  ").is_err());
+        assert!(Config::validate_source_name("acme/dev").is_err());
+        assert!(Config::validate_source_name(".local").is_err());
+        assert!(Config::validate_source_name("core").is_err());
+    }
+
+    #[test]
+    fn parse_bool_env_works() {
+        assert_eq!(parse_bool_env("1"), Some(true));
+        assert_eq!(parse_bool_env("true"), Some(true));
+        assert_eq!(parse_bool_env("YES"), Some(true));
+        assert_eq!(parse_bool_env("On"), Some(true));
+
+        assert_eq!(parse_bool_env("0"), Some(false));
+        assert_eq!(parse_bool_env("false"), Some(false));
+        assert_eq!(parse_bool_env("NO"), Some(false));
+        assert_eq!(parse_bool_env("Off"), Some(false));
+
+        assert_eq!(parse_bool_env("invalid"), None);
+        assert_eq!(parse_bool_env(""), None);
+    }
+
+    #[test]
+    fn config_defaults() {
+        let cfg = Config::default();
+        assert!(cfg.color);
+        assert!(cfg.auto_update);
+        assert_eq!(cfg.auto_update_ttl_seconds, 21600);
+        assert_eq!(cfg.sources, vec![".local", "core"]);
+        assert!(cfg.source.is_empty());
+        assert_eq!(cfg.registry.remote, "https://github.com/apix-sh/vault.git");
+    }
+
+    #[test]
+    fn source_remote_resolution() {
+        let mut cfg = Config::default();
+        cfg.source.insert(
+            "acme".to_string(),
+            SourceConfig {
+                remote: "https://git.acme.com/vaults.git".to_string(),
+            },
+        );
+
+        assert_eq!(
+            cfg.source_remote("core").unwrap(),
+            "https://github.com/apix-sh/vault.git"
+        );
+        assert_eq!(
+            cfg.source_remote("acme").unwrap(),
+            "https://git.acme.com/vaults.git"
+        );
+        assert!(cfg.source_remote("unknown").is_none());
+    }
+}

@@ -35,6 +35,102 @@ pub fn resolve_path_item<'a>(
     )))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_path_item_circular() {
+        let spec = OpenAPI {
+            openapi: "3.0.0".to_string(),
+            info: Default::default(),
+            servers: vec![],
+            paths: openapiv3::Paths {
+                paths: {
+                    let mut map = indexmap::IndexMap::new();
+                    map.insert("path_a".to_string(), ReferenceOr::Reference { reference: "#/paths/path_b".to_string() });
+                    map.insert("path_b".to_string(), ReferenceOr::Reference { reference: "#/paths/path_a".to_string() });
+                    map
+                },
+                ..Default::default()
+            },
+            components: None,
+            security: None,
+            tags: vec![],
+            external_docs: None,
+            extensions: indexmap::IndexMap::new(),
+        };
+
+        let mut seen = HashSet::new();
+        let err = resolve_path_item("#/paths/path_a", &spec, &mut seen).unwrap_err();
+        assert!(matches!(err, ApixError::Parse(msg) if msg.contains("Circular path reference")));
+    }
+
+    #[test]
+    fn resolve_path_item_unresolvable() {
+        let spec = OpenAPI {
+            openapi: "3.0.0".to_string(),
+            info: Default::default(),
+            servers: vec![],
+            paths: Default::default(),
+            components: None,
+            security: None,
+            tags: vec![],
+            external_docs: None,
+            extensions: indexmap::IndexMap::new(),
+        };
+
+        let mut seen = HashSet::new();
+        let err = resolve_path_item("#/paths/path_missing", &spec, &mut seen).unwrap_err();
+        assert!(matches!(err, ApixError::Parse(msg) if msg.contains("Could not resolve")));
+    }
+
+    #[test]
+    fn resolve_schema_circular() {
+        let mut schemas = indexmap::IndexMap::new();
+        schemas.insert("schema_a".to_string(), ReferenceOr::Reference { reference: "#/components/schemas/schema_b".to_string() });
+        schemas.insert("schema_b".to_string(), ReferenceOr::Reference { reference: "#/components/schemas/schema_a".to_string() });
+
+        let spec = OpenAPI {
+            openapi: "3.0.0".to_string(),
+            info: Default::default(),
+            servers: vec![],
+            paths: Default::default(),
+            components: Some(openapiv3::Components {
+                schemas,
+                ..Default::default()
+            }),
+            security: None,
+            tags: vec![],
+            external_docs: None,
+            extensions: indexmap::IndexMap::new(),
+        };
+
+        let mut seen = HashSet::new();
+        let err = resolve_schema("#/components/schemas/schema_a", &spec, &mut seen).unwrap_err();
+        assert!(matches!(err, ApixError::Parse(msg) if msg.contains("Circular schema reference")));
+    }
+
+    #[test]
+    fn resolve_schema_unresolvable() {
+        let spec = OpenAPI {
+            openapi: "3.0.0".to_string(),
+            info: Default::default(),
+            servers: vec![],
+            paths: Default::default(),
+            components: None,
+            security: None,
+            tags: vec![],
+            external_docs: None,
+            extensions: indexmap::IndexMap::new(),
+        };
+
+        let mut seen = HashSet::new();
+        let err = resolve_schema("#/components/schemas/missing", &spec, &mut seen).unwrap_err();
+        assert!(matches!(err, ApixError::Parse(msg) if msg.contains("Could not resolve")));
+    }
+}
+
 pub fn resolve_schema<'a>(
     reference: &'a str,
     spec: &'a OpenAPI,
