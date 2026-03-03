@@ -20,7 +20,9 @@ pub fn resolve_path_item<'a>(
         if let Some(ref_or_item) = spec.paths.paths.get(&unescaped) {
             match ref_or_item {
                 ReferenceOr::Item(item) => return Ok(item),
-                ReferenceOr::Reference { reference: next_ref } => {
+                ReferenceOr::Reference {
+                    reference: next_ref,
+                } => {
                     return resolve_path_item(next_ref, spec, seen);
                 }
             }
@@ -51,7 +53,9 @@ pub fn resolve_schema<'a>(
             if let Some(ref_or_item) = components.schemas.get(name) {
                 match ref_or_item {
                     ReferenceOr::Item(item) => return Ok(item),
-                    ReferenceOr::Reference { reference: next_ref } => {
+                    ReferenceOr::Reference {
+                        reference: next_ref,
+                    } => {
                         return resolve_schema(next_ref, spec, seen);
                     }
                 }
