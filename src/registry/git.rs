@@ -120,13 +120,13 @@ pub fn pull_namespace(namespace_arg: &str, source: &str) -> Result<(), ApixError
         return Err(ApixError::VaultNotFound(msg));
     }
 
-    if let Some(ver) = version {
-        if !registry.apis[namespace].versions.contains(&ver.to_string()) {
-            let available_versions = registry.apis[namespace].versions.join(", ");
-            return Err(ApixError::VaultNotFound(format!(
-                "Version `{ver}` not found in namespace `{namespace}`. Available versions: {available_versions}"
-            )));
-        }
+    if let Some(ver) = version
+        && !registry.apis[namespace].versions.contains(&ver.to_string())
+    {
+        let available_versions = registry.apis[namespace].versions.join(", ");
+        return Err(ApixError::VaultNotFound(format!(
+            "Version `{ver}` not found in namespace `{namespace}`. Available versions: {available_versions}"
+        )));
     }
 
     let checkout_path = if let Some(ver) = version {
@@ -135,10 +135,7 @@ pub fn pull_namespace(namespace_arg: &str, source: &str) -> Result<(), ApixError
         format!("{namespace}/")
     };
 
-    run_git(
-        ["sparse-checkout", "add", &checkout_path],
-        Some(&core),
-    )?;
+    run_git(["sparse-checkout", "add", &checkout_path], Some(&core))?;
     run_git(["pull"], Some(&core))?;
 
     let ns_dir = if let Some(ver) = version {

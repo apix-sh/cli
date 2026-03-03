@@ -168,14 +168,19 @@ fn emit_operation(
         return Ok(());
     };
 
-    let depth = path.trim_start_matches('/').split('/').filter(|s| !s.is_empty()).count();
+    let depth = path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .count();
     let type_dir_rel = if depth == 0 {
         "_types".to_string()
     } else {
         format!("{}_types", "../".repeat(depth))
     };
 
-    let (path_params, query_params, header_params, cookie_params) = collect_parameters(path_item, op, &type_dir_rel);
+    let (path_params, query_params, header_params, cookie_params) =
+        collect_parameters(path_item, op, &type_dir_rel);
     let content_type = request_content_type(op).unwrap_or_else(|| "application/json".to_string());
     let request_body = request_body_text(op, namespace, &parsed.version, &type_dir_rel);
     let responses = response_rows(op, namespace, &parsed.version, &type_dir_rel);
@@ -228,12 +233,7 @@ fn collect_parameters(
     path_item: &PathItem,
     op: &Operation,
     type_dir_rel: &str,
-) -> (
-    Vec<ParamRow>,
-    Vec<ParamRow>,
-    Vec<ParamRow>,
-    Vec<ParamRow>,
-) {
+) -> (Vec<ParamRow>, Vec<ParamRow>, Vec<ParamRow>, Vec<ParamRow>) {
     let mut path_rows = Vec::new();
     let mut query_rows = Vec::new();
     let mut header_rows = Vec::new();
@@ -259,17 +259,51 @@ fn collect_parameters(
                 });
             }
             ReferenceOr::Item(param) => match param {
-                Parameter::Query { parameter_data, style, allow_reserved, .. } => {
-                    query_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), Some(*allow_reserved)));
+                Parameter::Query {
+                    parameter_data,
+                    style,
+                    allow_reserved,
+                    ..
+                } => {
+                    query_rows.push(row_from_parameter_data(
+                        parameter_data,
+                        type_dir_rel,
+                        Some(format!("{:?}", style)),
+                        Some(*allow_reserved),
+                    ));
                 }
-                Parameter::Path { parameter_data, style } => {
-                    path_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), None));
+                Parameter::Path {
+                    parameter_data,
+                    style,
+                } => {
+                    path_rows.push(row_from_parameter_data(
+                        parameter_data,
+                        type_dir_rel,
+                        Some(format!("{:?}", style)),
+                        None,
+                    ));
                 }
-                Parameter::Header { parameter_data, style } => {
-                    header_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), None));
+                Parameter::Header {
+                    parameter_data,
+                    style,
+                } => {
+                    header_rows.push(row_from_parameter_data(
+                        parameter_data,
+                        type_dir_rel,
+                        Some(format!("{:?}", style)),
+                        None,
+                    ));
                 }
-                Parameter::Cookie { parameter_data, style } => {
-                    cookie_rows.push(row_from_parameter_data(parameter_data, type_dir_rel, Some(format!("{:?}", style)), None));
+                Parameter::Cookie {
+                    parameter_data,
+                    style,
+                } => {
+                    cookie_rows.push(row_from_parameter_data(
+                        parameter_data,
+                        type_dir_rel,
+                        Some(format!("{:?}", style)),
+                        None,
+                    ));
                 }
             },
         }
@@ -290,7 +324,9 @@ fn row_from_parameter_data(
                 let name = reference.rsplit('/').next().unwrap_or(reference);
                 format!("[{name}]({type_dir_rel}/{name}.md)")
             }
-            ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind, type_dir_rel),
+            ReferenceOr::Item(schema) => {
+                super::types::kind_to_string(&schema.schema_kind, type_dir_rel)
+            }
         },
         ParameterSchemaOrContent::Content(content) => {
             if let Some((ctype, _media_type)) = content.iter().next() {
@@ -356,17 +392,31 @@ fn request_body_text(op: &Operation, namespace: &str, version: &str, type_dir_re
             for ctype in item.content.keys() {
                 out.push_str(&format!("- `{ctype}`\n"));
             }
-            
+
             for (ctype, media_type) in item.content.iter() {
                 out.push('\n');
-                out.push_str(&inline_body_doc("### Inline Request Schema", ctype, media_type, namespace, version, type_dir_rel));
+                out.push_str(&inline_body_doc(
+                    "### Inline Request Schema",
+                    ctype,
+                    media_type,
+                    namespace,
+                    version,
+                    type_dir_rel,
+                ));
             }
             out.trim_end().to_string()
         }
     }
 }
 
-fn inline_body_doc(title_prefix: &str, ctype: &str, media_type: &MediaType, _namespace: &str, _version: &str, type_dir_rel: &str) -> String {
+fn inline_body_doc(
+    title_prefix: &str,
+    ctype: &str,
+    media_type: &MediaType,
+    _namespace: &str,
+    _version: &str,
+    type_dir_rel: &str,
+) -> String {
     let Some(schema_ref) = &media_type.schema else {
         return format!("No schema provided for `{ctype}`.");
     };
@@ -376,9 +426,7 @@ fn inline_body_doc(title_prefix: &str, ctype: &str, media_type: &MediaType, _nam
     match schema_ref {
         ReferenceOr::Reference { reference } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
-            out.push_str(&format!(
-                "[{name}]({type_dir_rel}/{name}.md)\n"
-            ));
+            out.push_str(&format!("[{name}]({type_dir_rel}/{name}.md)\n"));
         }
         ReferenceOr::Item(schema) => {
             let rows = schema_property_rows(schema, type_dir_rel);
@@ -403,7 +451,10 @@ fn inline_body_doc(title_prefix: &str, ctype: &str, media_type: &MediaType, _nam
                 }
             }
 
-            let ex = media_type.example.clone().or_else(|| schema_example_json(schema));
+            let ex = media_type
+                .example
+                .clone()
+                .or_else(|| schema_example_json(schema));
             if let Some(ex_val) = ex {
                 out.push('\n');
                 out.push_str("#### Example Payload\n");
@@ -417,7 +468,8 @@ fn inline_body_doc(title_prefix: &str, ctype: &str, media_type: &MediaType, _nam
                     out.push_str("\n```\n");
                 } else {
                     out.push_str("```json\n");
-                    let rendered = serde_json::to_string_pretty(&ex_val).unwrap_or_else(|_| "{}".to_string());
+                    let rendered =
+                        serde_json::to_string_pretty(&ex_val).unwrap_or_else(|_| "{}".to_string());
                     out.push_str(&rendered);
                     out.push_str("\n```\n");
                 }
@@ -428,7 +480,10 @@ fn inline_body_doc(title_prefix: &str, ctype: &str, media_type: &MediaType, _nam
     out
 }
 
-fn schema_property_rows(schema: &Schema, type_dir_rel: &str) -> Vec<(String, bool, String, String)> {
+fn schema_property_rows(
+    schema: &Schema,
+    type_dir_rel: &str,
+) -> Vec<(String, bool, String, String)> {
     match &schema.schema_kind {
         SchemaKind::Type(Type::Object(obj)) => obj
             .properties
@@ -485,7 +540,10 @@ fn multipart_example(val: &Value) -> String {
     if let Value::Object(map) = val {
         for (k, v) in map {
             out.push_str("--boundary\n");
-            out.push_str(&format!("Content-Disposition: form-data; name=\"{}\"\n\n", k));
+            out.push_str(&format!(
+                "Content-Disposition: form-data; name=\"{}\"\n\n",
+                k
+            ));
             let val_str = match v {
                 Value::String(s) => s.clone(),
                 other => other.to_string(),
@@ -498,14 +556,20 @@ fn multipart_example(val: &Value) -> String {
     out.trim_end().to_string()
 }
 
-fn response_rows(op: &Operation, namespace: &str, version: &str, type_dir_rel: &str) -> Vec<ResponseRow> {
+fn response_rows(
+    op: &Operation,
+    namespace: &str,
+    version: &str,
+    type_dir_rel: &str,
+) -> Vec<ResponseRow> {
     let mut rows = Vec::new();
     for (status, response_ref) in &op.responses.responses {
         let status_text = match status {
             StatusCode::Code(code) => code.to_string(),
             StatusCode::Range(range) => format!("{range:?}xx"),
         };
-        let (desc, headers, content) = extract_response_details(response_ref, namespace, version, type_dir_rel);
+        let (desc, headers, content) =
+            extract_response_details(response_ref, namespace, version, type_dir_rel);
         rows.push(ResponseRow {
             status: status_text,
             description: desc,
@@ -514,7 +578,8 @@ fn response_rows(op: &Operation, namespace: &str, version: &str, type_dir_rel: &
         });
     }
     if let Some(default) = &op.responses.default {
-        let (desc, headers, content) = extract_response_details(default, namespace, version, type_dir_rel);
+        let (desc, headers, content) =
+            extract_response_details(default, namespace, version, type_dir_rel);
         rows.push(ResponseRow {
             status: "default".to_string(),
             description: desc,
@@ -557,10 +622,21 @@ fn extract_response_details(
             let mut out = String::new();
             for (ctype, media_type) in &item.content {
                 out.push('\n');
-                out.push_str(&inline_body_doc("#### Response Schema", ctype, media_type, namespace, version, type_dir_rel));
+                out.push_str(&inline_body_doc(
+                    "#### Response Schema",
+                    ctype,
+                    media_type,
+                    namespace,
+                    version,
+                    type_dir_rel,
+                ));
             }
 
-            (item.description.clone(), headers, out.trim_start().to_string())
+            (
+                item.description.clone(),
+                headers,
+                out.trim_start().to_string(),
+            )
         }
     }
 }
@@ -572,7 +648,9 @@ fn row_from_header(name: &str, header: &openapiv3::Header, type_dir_rel: &str) -
                 let ref_name = reference.rsplit('/').next().unwrap_or(reference);
                 format!("[{ref_name}]({type_dir_rel}/{ref_name}.md)")
             }
-            ReferenceOr::Item(schema) => super::types::kind_to_string(&schema.schema_kind, type_dir_rel),
+            ReferenceOr::Item(schema) => {
+                super::types::kind_to_string(&schema.schema_kind, type_dir_rel)
+            }
         },
         ParameterSchemaOrContent::Content(content) => {
             if let Some((ctype, _)) = content.iter().next() {
@@ -752,9 +830,11 @@ mod tests {
         let _ = generate_routes(&parsed, &out_root, "demo").expect("generate");
 
         // the resolved path item /link should have a GET.md and be identical to /target's GET.md
-        let _target_rendered = std::fs::read_to_string(out_root.join("target/GET.md")).expect("read target");
-        let link_rendered = std::fs::read_to_string(out_root.join("link/GET.md")).expect("read link");
-        
+        let _target_rendered =
+            std::fs::read_to_string(out_root.join("target/GET.md")).expect("read target");
+        let link_rendered =
+            std::fs::read_to_string(out_root.join("link/GET.md")).expect("read link");
+
         // However, the URL inside the rendered markdown differs slightly since base_path has changed.
         assert!(link_rendered.contains("Target Endpoint"));
         assert!(link_rendered.contains("/link"));
