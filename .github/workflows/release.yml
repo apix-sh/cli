@@ -146,8 +146,8 @@ jobs:
           url="${{ steps.sha.outputs.url }}"
           sha256="${{ steps.sha.outputs.sha256 }}"
 
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/apix-sh/homebrew-apix.git"
-          cd homebrew-apix
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/apix-sh/homebrew-tap.git"
+          cd homebrew-tap
 
           sed -i "s|url \".*\"|url \"${url}\"|" Formula/apix.rb
           sed -i "s|sha256 \".*\"|sha256 \"${sha256}\"|" Formula/apix.rb

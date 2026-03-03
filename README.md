@@ -17,14 +17,14 @@
 ### Homebrew (recommended)
 
 ```bash
-brew tap apix-sh/apix
+brew tap apix-sh/tap
 brew install apix
 ```
 
 Explicit form:
 
 ```bash
-brew install apix-sh/apix/apix
+brew install apix-sh/tap/apix
 ```
 
 ### curl | sh

@@ -18,7 +18,7 @@ apix --version
 If it is not installed, install it using Homebrew (macOS/Linux):
 
 ```bash
-brew tap apix-sh/apix
+brew tap apix-sh/tap
 brew install apix
 ```
 
@@ -81,6 +81,7 @@ Routes follow the format: `<namespace>/<version>/<path segments>/<METHOD>` (e.g.
   _(apix automatically maps `item_123` to the `{id}` parameter if the defined route is `demo/v1/items/{id}/GET`)_
 
 - **Explicit parameters**:
+
   ```bash
   apix call demo/v1/items/{id}/POST \
     -p id=item_123 \
