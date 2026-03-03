@@ -93,4 +93,49 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn parses_minimal_yaml_spec_file() {
+        let spec = r#"openapi: 3.0.0
+info:
+  title: Pet API
+  version: v1
+servers:
+  - url: https://api.example.com
+paths: {}"#;
+        let path = std::env::temp_dir().join(format!("apix-parser-test-{}.yaml", std::process::id()));
+        std::fs::write(&path, spec).expect("write spec");
+
+        let parsed = parse_spec(path.to_str().expect("path str")).expect("must parse");
+        assert_eq!(parsed.title, "Pet API");
+        assert_eq!(parsed.version, "v1");
+        assert_eq!(parsed.base_url, "https://api.example.com");
+        assert!(parsed.openapi.paths.paths.is_empty());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_invalid_spec_fails() {
+        let spec = r#"invalid JSON or YAML format"#;
+        let path = std::env::temp_dir().join(format!("apix-parser-invalid-{}.txt", std::process::id()));
+        std::fs::write(&path, spec).expect("write spec");
+
+        let res = parse_spec(path.to_str().expect("path str"));
+        assert!(res.is_err());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_detect_format() {
+        assert!(matches!(detect_format("spec.yaml", ""), SpecFormat::Yaml));
+        assert!(matches!(detect_format("spec.yml", ""), SpecFormat::Yaml));
+        assert!(matches!(detect_format("spec.json", ""), SpecFormat::Json));
+
+        assert!(matches!(detect_format("spec.txt", " { "), SpecFormat::Json));
+        assert!(matches!(detect_format("spec.txt", " [ "), SpecFormat::Json));
+        assert!(matches!(detect_format("spec.txt", " openapi: 3.0.0 "), SpecFormat::Unknown));
+        assert!(matches!(detect_format("spec.txt", ""), SpecFormat::Unknown));
+    }
 }

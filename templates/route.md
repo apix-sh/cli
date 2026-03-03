@@ -6,26 +6,25 @@ content_type: "{{ content_type }}"
 ---
 
 # {{ summary }}
-
+{% if !description.is_empty() %}
 {{ description }}
-
+{% endif %}
 ## Path Parameters
 
-{% if path_params.is_empty() %}
+{% if path_params.is_empty() -%}
 _(None)_
-{% else %}
+{% else -%}
 | Name | Required | Type | Description |
 | :--- | :---: | :--- | :--- |
 {% for p in path_params -%}
 | `{{ p.name }}` | {{ p.required }} | {{ p.param_type }} | {{ p.description }} |
 {% endfor -%}
 {% endif %}
-
 ## Query Parameters
 
-{% if query_params.is_empty() %}
+{% if query_params.is_empty() -%}
 _(None)_
-{% else %}
+{% else -%}
 | Name | Required | Type | Description |
 | :--- | :---: | :--- | :--- |
 {% for p in query_params -%}
@@ -33,7 +32,7 @@ _(None)_
 {% endfor -%}
 {% endif %}
 
-{% if !header_params.is_empty() -%}
+{%- if !header_params.is_empty() %}
 
 ## Header Parameters
 
@@ -45,7 +44,7 @@ _(None)_
 {% endfor -%}
 {% endif %}
 
-{% if !cookie_params.is_empty() -%}
+{%- if !cookie_params.is_empty() %}
 
 ## Cookie Parameters
 
@@ -59,23 +58,19 @@ _(None)_
 
 ## Request Body
 
-{% if request_body.is_empty() %}
+{% if request_body.is_empty() -%}
 _(None)_
-{% else %}
+{% else -%}
 {{ request_body }}
 {% endif %}
-
 ## Responses
 
-{% for r in responses %}
-
+{% for r in responses -%}
 ### {{ r.status }}
-
 {% if !r.description.is_empty() %}
 {{ r.description }}
 {% endif %}
-
-{% if !r.headers.is_empty() %}
+{%- if !r.headers.is_empty() %}
 
 #### Headers
 
@@ -86,9 +81,7 @@ _(None)_
 | `{{ h.name }}` | {{ h.required }} | {{ h.param_type }} | {{ h.description }} |
 {% endfor -%}
 {% endif %}
-
-{% if !r.content.is_empty() %}
+{%- if !r.content.is_empty() %}
 {{ r.content }}
 {% endif %}
-
-{% endfor %}
+{% endfor -%}

@@ -85,7 +85,7 @@ pub fn update_registry_metadata_only(source: &str) -> Result<(), ApixError> {
     Ok(())
 }
 
-pub fn pull_namespace(namespace: &str, source: &str) -> Result<(), ApixError> {
+pub fn pull_namespace(namespace_arg: &str, source: &str) -> Result<(), ApixError> {
     let core = crate::config::Config::apix_home()?
         .join("vaults")
         .join(source);
@@ -94,6 +94,11 @@ pub fn pull_namespace(namespace: &str, source: &str) -> Result<(), ApixError> {
             "Source `{source}` not found. Run `apix update --source {source}` first."
         )));
     }
+
+    let (namespace, version) = match namespace_arg.split_once('/') {
+        Some((ns, ver)) => (ns, Some(ver)),
+        None => (namespace_arg, None),
+    };
 
     let registry = super::Registry::load(source)?;
     if !registry.apis.contains_key(namespace) {
@@ -115,16 +120,40 @@ pub fn pull_namespace(namespace: &str, source: &str) -> Result<(), ApixError> {
         return Err(ApixError::VaultNotFound(msg));
     }
 
-    run_git(
-        ["sparse-checkout", "add", &format!("{namespace}/")],
-        Some(&core),
-    )?;
+    if let Some(ver) = version
+        && !registry.apis[namespace].versions.contains(&ver.to_string())
+    {
+        let available_versions = registry.apis[namespace].versions.join(", ");
+        return Err(ApixError::VaultNotFound(format!(
+            "Version `{ver}` not found in namespace `{namespace}`. Available versions: {available_versions}"
+        )));
+    }
+
+    let checkout_path = if let Some(ver) = version {
+        format!("{namespace}/{ver}/")
+    } else {
+        format!("{namespace}/")
+    };
+
+    run_git(["sparse-checkout", "add", &checkout_path], Some(&core))?;
     run_git(["pull"], Some(&core))?;
 
-    let ns_dir = core.join(namespace);
+    let ns_dir = if let Some(ver) = version {
+        core.join(namespace).join(ver)
+    } else {
+        core.join(namespace)
+    };
+
     let (count, bytes) = summarize_dir(&ns_dir)?;
+
+    let pull_desc = if let Some(ver) = version {
+        format!("{source}/{namespace}/{ver}")
+    } else {
+        format!("{source}/{namespace}")
+    };
+
     output::eprintln_info(&format!(
-        "Pulled `{source}/{namespace}`: {} files, {:.2} MB",
+        "Pulled `{pull_desc}`: {} files, {:.2} MB",
         count,
         bytes as f64 / (1024.0 * 1024.0)
     ));

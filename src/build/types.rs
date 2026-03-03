@@ -38,8 +38,7 @@ pub fn generate_types(
     };
 
     for (name, schema_ref) in &components.schemas {
-        let (schema_type, description, properties) =
-            schema_details(schema_ref, namespace, parsed);
+        let (schema_type, description, properties) = schema_details(schema_ref, namespace, parsed);
 
         let tpl = TypeTemplate {
             schema_type: &schema_type,
@@ -114,7 +113,11 @@ fn collect_properties(schema: &Schema, namespace: &str, parsed: &ParsedSpec) -> 
                     }
                     ReferenceOr::Reference { reference } => {
                         let mut seen = HashSet::new();
-                        if let Ok(resolved) = crate::build::resolver::resolve_schema(reference, &parsed.openapi, &mut seen) {
+                        if let Ok(resolved) = crate::build::resolver::resolve_schema(
+                            reference,
+                            &parsed.openapi,
+                            &mut seen,
+                        ) {
                             rows.extend(collect_properties(resolved, namespace, parsed));
                         } else {
                             let name = reference.rsplit('/').next().unwrap_or(reference);
@@ -142,10 +145,7 @@ fn prop_type_and_description(
     match prop_schema {
         ReferenceOr::Reference { reference } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
-            (
-                format!("[{name}]({name}.md)"),
-                String::new(),
-            )
+            (format!("[{name}]({name}.md)"), String::new())
         }
         ReferenceOr::Item(inner) => {
             let ptype = kind_to_string(&inner.schema_kind, ".");
@@ -306,7 +306,8 @@ mod tests {
 }"##;
         let spec_path =
             std::env::temp_dir().join(format!("apix-types-ext-{}.json", std::process::id()));
-        let out_root = std::env::temp_dir().join(format!("apix-types-ext-out-{}", std::process::id()));
+        let out_root =
+            std::env::temp_dir().join(format!("apix-types-ext-out-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out_root);
         std::fs::write(&spec_path, spec).expect("write");
 
@@ -314,7 +315,8 @@ mod tests {
         let n = generate_types(&parsed, &out_root, "demo").expect("generate");
         assert_eq!(n, 2);
 
-        let rendered = std::fs::read_to_string(out_root.join("_types/ExtendedThing.md")).expect("read");
+        let rendered =
+            std::fs::read_to_string(out_root.join("_types/ExtendedThing.md")).expect("read");
         assert!(rendered.contains("base_val"));
         assert!(rendered.contains("extended_val"));
 

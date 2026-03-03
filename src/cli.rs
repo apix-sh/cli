@@ -44,8 +44,9 @@ pub enum Commands {
         no_auto_update: bool,
     },
 
-    /// Pull an API vault from the registry
+    /// Pull an API vault (or specific version) from the registry
     Pull {
+        #[arg(value_name = "NAMESPACE[/VERSION]")]
         namespace: String,
         #[arg(long)]
         source: Option<String>,
@@ -254,5 +255,23 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("unrecognized subcommand"));
         assert!(msg.contains("build"));
+    }
+
+    #[test]
+    fn test_print_completions() {
+        // Just verify it doesn't panic
+        let _ = print_completions(CompletionShell::Bash);
+    }
+
+    #[test]
+    fn completion_shell_as_clap_shell() {
+        assert_eq!(CompletionShell::Bash.as_clap_shell(), Shell::Bash);
+        assert_eq!(CompletionShell::Elvish.as_clap_shell(), Shell::Elvish);
+        assert_eq!(CompletionShell::Fish.as_clap_shell(), Shell::Fish);
+        assert_eq!(
+            CompletionShell::PowerShell.as_clap_shell(),
+            Shell::PowerShell
+        );
+        assert_eq!(CompletionShell::Zsh.as_clap_shell(), Shell::Zsh);
     }
 }
