@@ -118,14 +118,26 @@ pub fn search(
         return Ok(());
     }
 
+    let mut current_source: Option<&str> = None;
     for m in merged {
-        let sources = m.sources.into_iter().collect::<Vec<_>>().join(",");
-        let versions = m.versions.into_iter().collect::<Vec<_>>().join(",");
-        let tags = m.tags.into_iter().collect::<Vec<_>>().join(",");
-        println!(
-            "{:<16} {:<20} {:<32} {:<12} [{}]",
-            sources, m.name, m.description, versions, tags
-        );
+        let source_name = &source_order[m.first_source_rank];
+        if current_source != Some(source_name.as_str()) {
+            println!("{source_name}");
+            current_source = Some(source_name.as_str());
+        }
+
+        let versions = m.versions.into_iter().collect::<Vec<_>>().join(", ");
+        let tags: Vec<String> = m.tags.into_iter().collect();
+        let tags_str = if tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", tags.join(", "))
+        };
+
+        println!("  {} ({}){tags_str}", m.name, versions);
+        if !m.description.is_empty() {
+            println!("    {}", m.description);
+        }
     }
 
     Ok(())
