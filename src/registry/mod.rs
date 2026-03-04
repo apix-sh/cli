@@ -122,7 +122,7 @@ pub fn search(
     for m in merged {
         let source_name = &source_order[m.first_source_rank];
         if current_source != Some(source_name.as_str()) {
-            println!("{source_name}");
+            println!("{}", output::fmt_source(source_name));
             current_source = Some(source_name.as_str());
         }
 
@@ -134,7 +134,7 @@ pub fn search(
             format!(" [{}]", tags.join(", "))
         };
 
-        println!("  {} ({}){tags_str}", m.name, versions);
+        println!("  {} ({}){tags_str}", output::fmt_namespace(&m.name), versions);
         if !m.description.is_empty() {
             println!("    {}", m.description);
         }

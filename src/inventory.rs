@@ -138,13 +138,13 @@ fn render_namespace_version_detail(
     let mut out = String::new();
     out.push_str(&format!(
         "{}/{} (source: {})\n\n",
-        detail.namespace, detail.version, detail.source
+        output::fmt_namespace(namespace), version, output::fmt_source(&detail.source)
     ));
 
     for group in detail.routes {
-        out.push_str(&format!("{}\n", group.path));
+        out.push_str(&format!("{}\n", output::fmt_path(&group.path)));
         for entry in group.routes {
-            out.push_str(&format!("  {}: {}\n", entry.method, entry.summary));
+            out.push_str(&format!("  {}: {}\n", output::fmt_method(&entry.method), entry.summary));
         }
     }
 
@@ -414,18 +414,18 @@ fn print_grouped_by_source(records: &[NamespaceRecord]) {
     for ns in records {
         if current != Some(ns.source.as_str()) {
             current = Some(ns.source.as_str());
-            println!("{}", ns.source);
+            println!("{}", output::fmt_source(&ns.source));
         }
-        println!("  {} ({})", ns.namespace, format_versions(&ns.versions));
+        println!("  {} ({})", output::fmt_namespace(&ns.namespace), format_versions(&ns.versions));
     }
 }
 
 fn print_namespace_detail(records: &[NamespaceRecord]) {
-    println!("{}", records[0].namespace);
+    println!("{}", output::fmt_namespace(&records[0].namespace));
     for r in records {
         println!(
             "  {:<10} versions: {}",
-            r.source,
+            output::fmt_source(&r.source),
             format_versions_detailed(&r.versions)
         );
     }
@@ -572,8 +572,9 @@ mod tests {
         .expect("write");
 
         let out = render_namespace_version_detail("demo", "v1", None).expect("render");
-        assert!(out.contains("source: .local"));
-        assert!(out.contains("GET: Local title"));
+        let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
+        assert!(plain.contains("source: .local"));
+        assert!(plain.contains("GET: Local title"));
 
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -596,8 +597,9 @@ mod tests {
         .expect("write");
 
         let out = render_namespace_version_detail("demo", "v1", Some("core")).expect("render");
-        assert!(out.contains("source: core"));
-        assert!(out.contains("POST: Core desc line"));
+        let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
+        assert!(plain.contains("source: core"));
+        assert!(plain.contains("POST: Core desc line"));
 
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -629,12 +631,13 @@ mod tests {
         .expect("write");
 
         let out = render_namespace_version_detail("demo", "v1", None).expect("render");
-        let alpha = out.find("alpha").expect("alpha");
-        let beta = out.find("beta").expect("beta");
+        let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
+        let alpha = plain.find("alpha").expect("alpha");
+        let beta = plain.find("beta").expect("beta");
         assert!(alpha < beta);
 
-        let get = out.find("GET: B get").expect("get");
-        let post = out.find("POST: B post").expect("post");
+        let get = plain.find("GET: B get").expect("get");
+        let post = plain.find("POST: B post").expect("post");
         assert!(get < post);
 
         let _ = std::fs::remove_dir_all(&home);

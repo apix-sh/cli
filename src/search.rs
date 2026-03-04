@@ -1,4 +1,5 @@
 use crate::error::ApixError;
+use crate::output;
 use crate::vault::resolver;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::{SearcherBuilder, sinks::UTF8};
@@ -18,7 +19,7 @@ pub fn grep(
     let lines = search_markdown_files(&files, &base, query, limit)?;
 
     for line in lines {
-        println!("{}:{line}", resolved.source);
+        println!("{}:{}", output::fmt_source(&resolved.source), line);
     }
 
     Ok(())
@@ -57,7 +58,7 @@ fn search_markdown_files(
             let ln = line_num;
             results
                 .borrow_mut()
-                .push(format!("{rel}:{ln}: {}", line.trim_end()));
+                .push(format!("{}:{}: {}", crate::output::fmt_path(&rel), crate::output::fmt_line_number(&ln.to_string()), line.trim_end()));
             Ok(true)
         });
 

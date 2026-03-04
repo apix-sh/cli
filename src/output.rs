@@ -96,6 +96,46 @@ fn colors_disabled() -> bool {
     opts.no_color || std::env::var_os("NO_COLOR").is_some() || !std::io::stdout().is_terminal()
 }
 
+pub fn fmt_source(s: &str) -> String {
+    if colors_disabled() {
+        s.to_string()
+    } else {
+        s.bright_green().underline().to_string()
+    }
+}
+
+pub fn fmt_namespace(s: &str) -> String {
+    if colors_disabled() {
+        s.to_string()
+    } else {
+        s.bold().to_string()
+    }
+}
+
+pub fn fmt_method(s: &str) -> String {
+    if colors_disabled() {
+        s.to_string()
+    } else {
+        s.bold().to_string()
+    }
+}
+
+pub fn fmt_path(s: &str) -> String {
+    if colors_disabled() {
+        s.to_string()
+    } else {
+        s.bright_green().underline().to_string()
+    }
+}
+
+pub fn fmt_line_number(s: &str) -> String {
+    if colors_disabled() {
+        s.to_string()
+    } else {
+        s.bold().to_string()
+    }
+}
+
 fn should_use_pager(text: &str) -> bool {
     if options().no_pager || options().json || !std::io::stdout().is_terminal() {
         return false;

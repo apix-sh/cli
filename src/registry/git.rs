@@ -194,7 +194,7 @@ pub fn source_list() -> Result<(), ApixError> {
         let remote = cfg
             .source_remote(&s)
             .unwrap_or_else(|| "(no remote configured)".to_string());
-        println!("{:<12} {}", s, remote);
+        println!("{:<12} {}", output::fmt_source(&s), remote);
     }
     Ok(())
 }
