@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/apix-sh/cli/compare/v0.1.3...v0.1.4) - 2026-03-04
+
+### Added
+
+- Add a GitHub Actions job to update the `public/install.sh` version in the `apix-sh/web` repository with the new release tag.
+- customize markdown output styling and display frontmatter as formatted tables.
+
+### Other
+
+- Reordered Homebrew installation instructions in README.
+
 ## [0.1.3](https://github.com/apix-sh/cli/compare/v0.1.2...v0.1.3) - 2026-03-04
 
 ### Added
