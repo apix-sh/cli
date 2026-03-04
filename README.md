@@ -14,19 +14,6 @@
 
 ## Install
 
-### Homebrew (recommended)
-
-```bash
-brew tap apix-sh/tap
-brew install apix
-```
-
-Explicit form:
-
-```bash
-brew install apix-sh/tap/apix
-```
-
 ### curl | sh
 
 > Install script is maintained in the [web repo](https://github.com/apix-sh/web/blob/main/public/install.sh).
@@ -47,6 +34,19 @@ Custom install directory:
 
 ```bash
 curl -fsSL https://apix.sh/install | sh -s -- --bin-dir "$HOME/.local/bin"
+```
+
+### Homebrew (recommended)
+
+```bash
+brew tap apix-sh/tap
+brew install apix
+```
+
+Explicit form:
+
+```bash
+brew install apix-sh/tap/apix
 ```
 
 ### Build from source
