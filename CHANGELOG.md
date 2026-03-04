@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/apix-sh/cli/compare/v0.1.2...v0.1.3) - 2026-03-04
+
+### Added
+
+- Introduce and apply colored output formatting for sources, namespaces, methods, paths, and line numbers across CLI commands.
+- allow apix pull to accept a specific namespace version ([#4](https://github.com/apix-sh/cli/pull/4))
+- update apix search output format to group by source ([#5](https://github.com/apix-sh/cli/pull/5))
+
+### Other
+
+- Improve template conditional rendering, whitespace control, and variable quoting for generated markdown.
+- Rename Homebrew tap from `apix-sh/apix` to `apix-sh/tap` and update all references in documentation and the release workflow.
+- improve test coverage across multiple modules ([#6](https://github.com/apix-sh/cli/pull/6))
+
 ## [0.1.2](https://github.com/apix-sh/cli/compare/v0.1.1...v0.1.2) - 2026-03-02
 
 ### Fixed
