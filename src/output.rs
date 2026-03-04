@@ -67,19 +67,71 @@ pub fn print_with_optional_pager(text: &str) {
     print!("{text}");
 }
 
+static CUSTOM_TABLE_BORDERS: termimad::TableBorderChars = termimad::TableBorderChars {
+    horizontal: '─',
+    vertical: ' ',
+    top_left_corner: ' ',
+    top_right_corner: ' ',
+    bottom_right_corner: ' ',
+    bottom_left_corner: ' ',
+    top_junction: '─',
+    right_junction: '─',
+    bottom_junction: '─',
+    left_junction: '─',
+    cross: '─',
+};
+
+fn make_skin() -> termimad::MadSkin {
+    use termimad::crossterm::style::{Attribute, Color};
+
+    let mut skin = if colors_disabled() {
+        termimad::MadSkin::no_style()
+    } else {
+        let mut s = termimad::MadSkin::default();
+
+        // h1: underlined, bold, green (AnsiValue(10))
+        s.headers[0].compound_style.set_fg(Color::AnsiValue(10));
+        s.headers[0].compound_style.add_attr(Attribute::Bold);
+        s.headers[0].compound_style.add_attr(Attribute::Underlined);
+
+        // h2: bold green (AnsiValue(10)), NOT underlined
+        s.headers[1].compound_style.set_fg(Color::AnsiValue(10));
+        s.headers[1].compound_style.add_attr(Attribute::Bold);
+        s.headers[1].compound_style.remove_attr(Attribute::Underlined);
+
+        // h3: green (AnsiValue(10)), NOT underlined
+        s.headers[2].compound_style.set_fg(Color::AnsiValue(10));
+        s.headers[2].compound_style.remove_attr(Attribute::Underlined);
+
+        // h4: bold white (AnsiValue(15)), NOT underlined
+        s.headers[3].compound_style.set_fg(Color::AnsiValue(15));
+        s.headers[3].compound_style.add_attr(Attribute::Bold);
+        s.headers[3].compound_style.remove_attr(Attribute::Underlined);
+
+        s
+    };
+
+    skin.headers[0].align = termimad::Alignment::Left;
+    skin.headers[1].align = termimad::Alignment::Left;
+    skin.headers[2].align = termimad::Alignment::Left;
+    skin.headers[3].align = termimad::Alignment::Left;
+
+    skin.inline_code.object_style.background_color = None;
+
+    skin.table_border_chars = &CUSTOM_TABLE_BORDERS;
+
+    skin
+}
+
 fn render_markdown(markdown: &str) -> String {
     if should_print_raw() {
         return markdown.to_string();
     }
 
     let mut out = Vec::new();
-    let write_res = if colors_disabled() {
-        let skin = termimad::MadSkin::no_style();
-        skin.write_text_on(&mut out, markdown)
-    } else {
-        let skin = termimad::MadSkin::default();
-        skin.write_text_on(&mut out, markdown)
-    };
+    let skin = make_skin();
+    let write_res = skin.write_text_on(&mut out, markdown);
+    
     if write_res.is_err() {
         return markdown.to_string();
     }

@@ -19,10 +19,22 @@ pub fn show(route: &str, source_override: Option<&str>) -> Result<(), ApixError>
         Err(err) => return Err(err),
     };
     let content = std::fs::read_to_string(resolved.file_path)?;
-    let rendered = if resolved.source != ".local" {
-        format!("> Source: `{}`\n\n{}", resolved.source, content)
+    
+    let rendered_content = if let Ok((fm, body)) = frontmatter::extract_frontmatter::<serde_yaml::Value>(&content) {
+        let table = render_frontmatter_table(&fm);
+        if table.is_empty() {
+            body.to_string()
+        } else {
+            format!("{}\n{}", table, body)
+        }
     } else {
-        content
+        content.clone() // fallback if no frontmatter
+    };
+
+    let rendered = if resolved.source != ".local" {
+        format!("> Source: `{}`\n\n{}", resolved.source, rendered_content)
+    } else {
+        rendered_content
     };
     output::print_markdown_with_optional_pager(&rendered);
     Ok(())
@@ -34,10 +46,8 @@ pub fn peek(route: &str, source_override: Option<&str>) -> Result<(), ApixError>
     if resolved.relative.starts_with(Path::new("_types")) {
         let (frontmatter, _) =
             frontmatter::extract_frontmatter::<frontmatter::TypeFrontmatter>(&content)?;
-        let fm = serde_yaml::to_string(&frontmatter)
-            .map_err(|err| ApixError::Parse(format!("Unable to render frontmatter: {err}")))?;
         let mut out = String::new();
-        out.push_str(&format!("---\n{}\n---\n\n", fm.trim_end()));
+        out.push_str(&render_frontmatter_table(&frontmatter));
         out.push_str("## Path Parameters\n*(None)*\n\n");
         out.push_str("## Required Request Body Fields\n*(None)*\n");
         if resolved.source != ".local" {
@@ -49,10 +59,8 @@ pub fn peek(route: &str, source_override: Option<&str>) -> Result<(), ApixError>
 
     let (frontmatter, body) =
         frontmatter::extract_frontmatter::<frontmatter::Frontmatter>(&content)?;
-    let fm = serde_yaml::to_string(&frontmatter)
-        .map_err(|err| ApixError::Parse(format!("Unable to render frontmatter: {err}")))?;
     let mut out = String::new();
-    out.push_str(&format!("---\n{}\n---\n\n", fm.trim_end()));
+    out.push_str(&render_frontmatter_table(&frontmatter));
 
     let path_params = extract_section(body, "## Path Parameters");
     out.push_str("## Path Parameters\n");
@@ -145,3 +153,25 @@ fn suggest_routes(route: &str) -> Result<Vec<String>, ApixError> {
     }
     Ok(out)
 }
+
+fn render_frontmatter_table<T: serde::Serialize>(fm: &T) -> String {
+    let mut out = String::new();
+    if let Ok(serde_json::Value::Object(map)) = serde_json::to_value(fm) {
+        if !map.is_empty() {
+            out.push_str("| Metadata | Value |\n| :--- | :--- |\n");
+            for (k, v) in map {
+                if v.is_null() {
+                    continue;
+                }
+                let val_str = match v {
+                    serde_json::Value::String(s) => s,
+                    _ => v.to_string(),
+                };
+                out.push_str(&format!("| {k} | `{val_str}` |\n"));
+            }
+            out.push('\n');
+        }
+    }
+    out
+}
+
