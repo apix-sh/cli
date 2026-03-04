@@ -157,3 +157,42 @@ jobs:
           git add Formula/apix.rb
           git commit -m "Update apix to ${tag}"
           git push
+
+  update-install-script:
+    name: update-install-script
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Install Script
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.meta.outputs.tag }}"
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/apix-sh/web.git"
+          cd web
+
+          sed -i "s|VERSION=\".*\" # x-release-update|VERSION=\"${tag}\" # x-release-update|" public/install.sh
+
+          if git diff --quiet public/install.sh; then
+            echo "No changes needed for install.sh"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add public/install.sh
+            git commit -m "Update install.sh to ${tag}"
+            git push
+          fi
