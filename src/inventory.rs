@@ -23,7 +23,11 @@ struct VersionRecord {
 enum LsTarget {
     All,
     Namespace(String),
-    NamespaceVersion { namespace: String, version: String },
+    NamespaceVersion {
+        namespace: String,
+        version: String,
+        path_prefix: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,13 +94,13 @@ pub fn ls(namespace: Option<&str>, source_override: Option<&str>) -> Result<(), 
             print_namespace_detail(&records);
             Ok(())
         }
-        LsTarget::NamespaceVersion { namespace, version } => {
+        LsTarget::NamespaceVersion { namespace, version, path_prefix } => {
             if output::options().json {
-                let detail = namespace_version_detail(&namespace, &version, source_override)?;
+                let detail = namespace_version_detail(&namespace, &version, path_prefix.as_deref(), source_override)?;
                 print_json(&detail)?;
                 return Ok(());
             }
-            let out = render_namespace_version_detail(&namespace, &version, source_override)?;
+            let out = render_namespace_version_detail(&namespace, &version, path_prefix.as_deref(), source_override)?;
             output::print_with_optional_pager(&out);
             Ok(())
         }
@@ -116,14 +120,22 @@ fn parse_ls_target(value: Option<&str>) -> Result<LsTarget, ApixError> {
     };
     if raw.contains('/') {
         let parts: Vec<&str> = raw.split('/').filter(|s| !s.is_empty()).collect();
-        if parts.len() != 2 {
+        if parts.len() < 2 {
             return Err(ApixError::Parse(
-                "`apix ls` route-detail mode expects `<namespace>/<version>`".to_string(),
+                "`apix ls` route-detail mode expects at least `<namespace>/<version>`".to_string(),
             ));
         }
+        let namespace = parts[0].to_string();
+        let version = parts[1].to_string();
+        let path_prefix = if parts.len() > 2 {
+            Some(parts[2..].join("/"))
+        } else {
+            None
+        };
         return Ok(LsTarget::NamespaceVersion {
-            namespace: parts[0].to_string(),
-            version: parts[1].to_string(),
+            namespace,
+            version,
+            path_prefix,
         });
     }
     Ok(LsTarget::Namespace(raw.to_string()))
@@ -132,9 +144,10 @@ fn parse_ls_target(value: Option<&str>) -> Result<LsTarget, ApixError> {
 fn render_namespace_version_detail(
     namespace: &str,
     version: &str,
+    path_prefix: Option<&str>,
     source_override: Option<&str>,
 ) -> Result<String, ApixError> {
-    let detail = namespace_version_detail(namespace, version, source_override)?;
+    let detail = namespace_version_detail(namespace, version, path_prefix, source_override)?;
     let mut out = String::new();
     out.push_str(&format!(
         "{}/{} (source: {})\n\n",
@@ -154,15 +167,28 @@ fn render_namespace_version_detail(
 fn namespace_version_detail(
     namespace: &str,
     version: &str,
+    path_prefix: Option<&str>,
     source_override: Option<&str>,
 ) -> Result<NamespaceVersionDetail, ApixError> {
     let resolved = resolve_version_root(namespace, version, source_override)?;
-    let grouped = collect_route_groups(&resolved.version_root)?;
+    let mut grouped = collect_route_groups(&resolved.version_root)?;
+
+    if let Some(prefix) = path_prefix {
+        grouped.retain(|path, _| path == prefix || path.starts_with(&format!("{prefix}/")));
+    }
+
     if grouped.is_empty() {
-        return Err(ApixError::RouteNotFound(format!(
-            "No route markdown files found for `{}/{}` in source `{}`",
-            namespace, version, resolved.source
-        )));
+        if let Some(prefix) = path_prefix {
+            return Err(ApixError::RouteNotFound(format!(
+                "No route markdown files found for `{namespace}/{version}/{prefix}` in source `{}`",
+                resolved.source
+            )));
+        } else {
+            return Err(ApixError::RouteNotFound(format!(
+                "No route markdown files found for `{namespace}/{version}` in source `{}`",
+                resolved.source
+            )));
+        }
     }
 
     let routes = grouped
@@ -469,13 +495,17 @@ mod tests {
             LsTarget::NamespaceVersion {
                 namespace: "demo".to_string(),
                 version: "v1".to_string(),
+                path_prefix: None,
             }
         );
-        let err = parse_ls_target(Some("too/many/parts")).expect_err("must fail");
-        match err {
-            ApixError::Parse(msg) => assert!(msg.contains("<namespace>/<version>")),
-            _ => panic!("unexpected error"),
-        }
+        assert_eq!(
+            parse_ls_target(Some("too/many/parts/here")).expect("parse"),
+            LsTarget::NamespaceVersion {
+                namespace: "too".to_string(),
+                version: "many".to_string(),
+                path_prefix: Some("parts/here".to_string()),
+            }
+        );
     }
 
     #[test]
@@ -571,7 +601,7 @@ mod tests {
         )
         .expect("write");
 
-        let out = render_namespace_version_detail("demo", "v1", None).expect("render");
+        let out = render_namespace_version_detail("demo", "v1", None, None).expect("render");
         let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
         assert!(plain.contains("source: .local"));
         assert!(plain.contains("GET: Local title"));
@@ -596,7 +626,7 @@ mod tests {
         )
         .expect("write");
 
-        let out = render_namespace_version_detail("demo", "v1", Some("core")).expect("render");
+        let out = render_namespace_version_detail("demo", "v1", None, Some("core")).expect("render");
         let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
         assert!(plain.contains("source: core"));
         assert!(plain.contains("POST: Core desc line"));
@@ -630,7 +660,7 @@ mod tests {
         )
         .expect("write");
 
-        let out = render_namespace_version_detail("demo", "v1", None).expect("render");
+        let out = render_namespace_version_detail("demo", "v1", None, None).expect("render");
         let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
         let alpha = plain.find("alpha").expect("alpha");
         let beta = plain.find("beta").expect("beta");
