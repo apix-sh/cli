@@ -188,6 +188,38 @@ pub fn fmt_line_number(s: &str) -> String {
     }
 }
 
+pub fn print_indented_dimmed(text: &str, indent_size: usize) {
+    let width = termimad::terminal_size().0 as usize;
+    let width = if width == 0 { 80 } else { width };
+    let indent = " ".repeat(indent_size);
+    let options = textwrap::Options::new(width.saturating_sub(indent_size))
+        .initial_indent(&indent)
+        .subsequent_indent(&indent);
+    
+    let wrapped = textwrap::fill(text, options);
+    if colors_disabled() {
+        println!("{wrapped}");
+    } else {
+        println!("{}", wrapped.dimmed());
+    }
+}
+
+pub fn print_indented_dimmed_tags(text: &str, indent_size: usize) {
+    let width = termimad::terminal_size().0 as usize;
+    let width = if width == 0 { 80 } else { width };
+    let indent = " ".repeat(indent_size);
+    let options = textwrap::Options::new(width.saturating_sub(indent_size))
+        .initial_indent(&indent)
+        .subsequent_indent(&indent);
+    
+    let wrapped = textwrap::fill(text, options);
+    if colors_disabled() {
+        println!("{wrapped}");
+    } else {
+        println!("{}", wrapped.cyan().dimmed());
+    }
+}
+
 fn should_use_pager(text: &str) -> bool {
     if options().no_pager || options().json || !std::io::stdout().is_terminal() {
         return false;

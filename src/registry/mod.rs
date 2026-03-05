@@ -127,16 +127,16 @@ pub fn search(
         }
 
         let versions = m.versions.into_iter().collect::<Vec<_>>().join(", ");
-        let tags: Vec<String> = m.tags.into_iter().collect();
-        let tags_str = if tags.is_empty() {
-            String::new()
-        } else {
-            format!(" [{}]", tags.join(", "))
-        };
+        println!("  {} ({})", output::fmt_namespace(&m.name), versions);
 
-        println!("  {} ({}){tags_str}", output::fmt_namespace(&m.name), versions);
         if !m.description.is_empty() {
-            println!("    {}", m.description);
+            output::print_indented_dimmed(&m.description, 4);
+        }
+        
+        if !m.tags.is_empty() {
+            let tags: Vec<String> = m.tags.into_iter().collect();
+            let tags_str = format!("[{}]", tags.join(", "));
+            output::print_indented_dimmed_tags(&tags_str, 4);
         }
     }
 
