@@ -45,7 +45,7 @@ fn search_markdown_files(
             break;
         }
         let rel = file
-            .strip_prefix(&base)
+            .strip_prefix(base)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| file.to_string_lossy().to_string());
 
@@ -62,7 +62,7 @@ fn search_markdown_files(
             Ok(true)
         });
 
-        searcher.search_path(&matcher, &file, sink).map_err(|err| {
+        searcher.search_path(&matcher, file, sink).map_err(|err| {
             ApixError::Parse(format!("Search failed for {}: {err}", file.display()))
         })?;
     }

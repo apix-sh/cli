@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn show_peek_grep_work_on_generated_vault() {
+    fn info_show_peek_grep_work_on_generated_vault() {
         let home = std::env::temp_dir().join(format!("apix-it-nav-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         set_var("APIX_HOME", &home);
@@ -130,6 +130,7 @@ mod tests {
         import(&fixture("complex.json"), "complex", None, false).expect("import");
         crate::vault::show("complex/v2/events/POST", None).expect("show");
         crate::vault::peek("complex/v2/events/POST", None).expect("peek");
+        crate::vault::info("complex/v2", None).expect("info");
         crate::search::grep("complex", "payload", 5, None).expect("grep");
 
         let _ = std::fs::remove_dir_all(&home);

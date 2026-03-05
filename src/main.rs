@@ -54,6 +54,7 @@ fn run() -> Result<(), ApixError> {
             source,
         } => search::grep(&namespace, &query, limit, source.as_deref()),
         Commands::Peek { route, source } => vault::peek(&route, source.as_deref()),
+        Commands::Info { target, source } => vault::info(&target, source.as_deref()),
         Commands::Show { route, source } => vault::show(&route, source.as_deref()),
         Commands::Call {
             route,

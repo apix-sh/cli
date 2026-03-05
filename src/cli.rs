@@ -77,6 +77,15 @@ pub enum Commands {
         source: Option<String>,
     },
 
+    /// Show API metadata
+    Info {
+        /// The namespace/version to show metadata for (e.g., "petstore/1.0.27")
+        target: String,
+        /// Optional source override
+        #[arg(long)]
+        source: Option<String>,
+    },
+
     /// Show full endpoint documentation
     Show {
         route: String,

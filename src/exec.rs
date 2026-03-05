@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+#[allow(clippy::too_many_arguments)]
 pub fn call(
     route: String,
     headers: Vec<String>,

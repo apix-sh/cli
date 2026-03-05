@@ -224,24 +224,22 @@ fn try_page(text: &str) -> bool {
         Err(_) => return false,
     };
 
-    if let Some(stdin) = child.stdin.as_mut() {
-        if stdin.write_all(text.as_bytes()).is_err() {
+    if let Some(stdin) = child.stdin.as_mut()
+        && stdin.write_all(text.as_bytes()).is_err() {
             let _ = child.kill();
             return false;
         }
-    }
     child.wait().map(|s| s.success()).unwrap_or(false)
 }
 
 fn configured_pager() -> String {
-    if let Ok(cfg) = crate::config::Config::load() {
-        if let Some(p) = cfg.pager {
+    if let Ok(cfg) = crate::config::Config::load()
+        && let Some(p) = cfg.pager {
             let trimmed = p.trim();
             if !trimmed.is_empty() {
                 return trimmed.to_string();
             }
         }
-    }
     if let Ok(pager) = std::env::var("PAGER") {
         let trimmed = pager.trim();
         if !trimmed.is_empty() {

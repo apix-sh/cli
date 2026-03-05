@@ -153,6 +153,7 @@ pub fn generate_routes(
     Ok(count)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_operation(
     parsed: &ParsedSpec,
     out_root: &Path,
@@ -344,11 +345,10 @@ fn row_from_parameter_data(
     if let Some(explode) = data.explode {
         hints.push(format!("explode={explode}"));
     }
-    if let Some(allow) = allow_reserved {
-        if allow {
+    if let Some(allow) = allow_reserved
+        && allow {
             hints.push("allowReserved=true".to_string());
         }
-    }
 
     let mut desc = data.description.clone().unwrap_or_default();
     if !hints.is_empty() {

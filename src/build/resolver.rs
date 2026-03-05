@@ -35,6 +35,39 @@ pub fn resolve_path_item<'a>(
     )))
 }
 
+pub fn resolve_schema<'a>(
+    reference: &'a str,
+    spec: &'a OpenAPI,
+    seen: &mut HashSet<&'a str>,
+) -> Result<&'a Schema, ApixError> {
+    if !seen.insert(reference) {
+        return Err(ApixError::Parse(format!(
+            "Circular schema reference detected: {}",
+            reference
+        )));
+    }
+
+    if reference.starts_with("#/components/schemas/") {
+        let name = reference.trim_start_matches("#/components/schemas/");
+        if let Some(components) = &spec.components
+            && let Some(ref_or_item) = components.schemas.get(name) {
+                match ref_or_item {
+                    ReferenceOr::Item(item) => return Ok(item),
+                    ReferenceOr::Reference {
+                        reference: next_ref,
+                    } => {
+                        return resolve_schema(next_ref, spec, seen);
+                    }
+                }
+            }
+    }
+
+    Err(ApixError::Parse(format!(
+        "Could not resolve schema reference: {}",
+        reference
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,36 +164,4 @@ mod tests {
     }
 }
 
-pub fn resolve_schema<'a>(
-    reference: &'a str,
-    spec: &'a OpenAPI,
-    seen: &mut HashSet<&'a str>,
-) -> Result<&'a Schema, ApixError> {
-    if !seen.insert(reference) {
-        return Err(ApixError::Parse(format!(
-            "Circular schema reference detected: {}",
-            reference
-        )));
-    }
 
-    if reference.starts_with("#/components/schemas/") {
-        let name = reference.trim_start_matches("#/components/schemas/");
-        if let Some(components) = &spec.components {
-            if let Some(ref_or_item) = components.schemas.get(name) {
-                match ref_or_item {
-                    ReferenceOr::Item(item) => return Ok(item),
-                    ReferenceOr::Reference {
-                        reference: next_ref,
-                    } => {
-                        return resolve_schema(next_ref, spec, seen);
-                    }
-                }
-            }
-        }
-    }
-
-    Err(ApixError::Parse(format!(
-        "Could not resolve schema reference: {}",
-        reference
-    )))
-}

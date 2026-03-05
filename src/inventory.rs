@@ -363,11 +363,10 @@ fn scan_local_inventory(
             continue;
         }
         for ns in read_namespaces(&source_root)? {
-            if let Some(filter) = namespace_filter {
-                if ns != filter {
+            if let Some(filter) = namespace_filter
+                && ns != filter {
                     continue;
                 }
-            }
             let versions = read_versions_with_route_counts(&source_root.join(&ns))?;
             if versions.is_empty() {
                 continue;

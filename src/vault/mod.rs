@@ -39,6 +39,38 @@ pub fn show(route: &str, source_override: Option<&str>) -> Result<(), ApixError>
     output::print_markdown_with_optional_pager(&rendered);
     Ok(())
 }
+pub fn info(target: &str, source_override: Option<&str>) -> Result<(), ApixError> {
+    let route = format!("{target}/_metadata");
+    let resolved = match resolver::resolve_route_path(&route, source_override) {
+        Ok(r) => r,
+        Err(_) => {
+            return Err(ApixError::VaultNotFound(format!(
+                "Metadata for `{target}` not found. Ensure the namespace and version are correct (e.g., namespace/version)."
+            )));
+        }
+    };
+    let content = std::fs::read_to_string(resolved.file_path)?;
+
+    let rendered_content =
+        if let Ok((fm, body)) = frontmatter::extract_frontmatter::<serde_yaml::Value>(&content) {
+            let table = render_frontmatter_table(&fm);
+            if table.is_empty() {
+                body.to_string()
+            } else {
+                format!("{}\n{}", table, body)
+            }
+        } else {
+            content.clone()
+        };
+
+    let rendered = if resolved.source != ".local" {
+        format!("> Source: `{}`\n\n{}", resolved.source, rendered_content)
+    } else {
+        rendered_content
+    };
+    output::print_markdown(&rendered);
+    Ok(())
+}
 
 pub fn peek(route: &str, source_override: Option<&str>) -> Result<(), ApixError> {
     let resolved = resolver::resolve_route_path(route, source_override)?;
@@ -156,22 +188,58 @@ fn suggest_routes(route: &str) -> Result<Vec<String>, ApixError> {
 
 fn render_frontmatter_table<T: serde::Serialize>(fm: &T) -> String {
     let mut out = String::new();
-    if let Ok(serde_json::Value::Object(map)) = serde_json::to_value(fm) {
-        if !map.is_empty() {
-            out.push_str("| Metadata | Value |\n| :--- | :--- |\n");
-            for (k, v) in map {
-                if v.is_null() {
-                    continue;
-                }
-                let val_str = match v {
-                    serde_json::Value::String(s) => s,
-                    _ => v.to_string(),
-                };
-                out.push_str(&format!("| {k} | `{val_str}` |\n"));
-            }
-            out.push('\n');
-        }
+    let Ok(serde_json::Value::Object(map)) = serde_json::to_value(fm) else {
+        return out;
+    };
+    if map.is_empty() {
+        return out;
     }
+    out.push_str("| Metadata | Value |\n| :--- | :--- |\n");
+    for (k, v) in map {
+        if v.is_null() {
+            continue;
+        }
+        let val_str = match v {
+            serde_json::Value::String(s) => s,
+            _ => v.to_string(),
+        };
+        out.push_str(&format!("| {k} | `{val_str}` |\n"));
+    }
+    out.push('\n');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_env::set_var;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_info_command_logic() {
+        let home = std::env::temp_dir().join(format!("apix-vault-info-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join("vaults/.local/demo/v1")).expect("mkdir");
+        std::fs::write(
+            home.join("vaults/.local/demo/v1/_metadata.md"),
+            "---\nbase_url: https://api.demo.com\n---\n# Demo\nTest",
+        )
+        .expect("write");
+        set_var("APIX_HOME", &home);
+
+        let result = info("demo/v1", None);
+        assert!(result.is_ok());
+
+        let err = info("demo/v2", None).unwrap_err();
+        match err {
+            ApixError::VaultNotFound(msg) => {
+                assert!(msg.contains("demo/v2"));
+            }
+            _ => panic!("Expected VaultNotFound, got {:?}", err),
+        }
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }
 

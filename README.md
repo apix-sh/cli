@@ -118,6 +118,7 @@ cargo run -- ls petstore/v1 --source core
 - `apix pull <namespace>[/<version>] [--source <name>]`: Sparse-checkout a namespace (or specific version) from a source (default: `core`)
 - `apix import <source> --name <namespace> [--output <vault_root>] [--overwrite]`: Generate vault files from an OpenAPI spec
 - `apix ls [namespace|namespace/version] [--source <name>]`: List local inventory or detailed routes
+- `apix info <namespace/version> [--source <name>]`: Print API metadata from frontmatter
 - `apix show <route> [--source <name>]`: Print full markdown for a route/type file
 - `apix peek <route> [--source <name>]`: Print frontmatter + condensed required input info
 - `apix grep <namespace> <query> [--limit N] [--source <name>]`: Search local markdown files
