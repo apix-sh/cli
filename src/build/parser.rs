@@ -14,11 +14,10 @@ pub struct ParsedSpec {
 
 pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
     let raw = if source.starts_with("http://") || source.starts_with("https://") {
-        ureq::get(source)
+        let resp = ureq::get(source)
             .call()
-            .map_err(|err| ApixError::Http(format!("Failed to fetch spec: {err}")))?
-            .into_string()
-            .map_err(|err| ApixError::Http(format!("Failed to read response body: {err}")))?
+            .map_err(|err| ApixError::Http(format!("Failed to fetch spec: {err}")))?;
+        crate::http::read_response(resp)?
     } else {
         std::fs::read_to_string(source)?
     };

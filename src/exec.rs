@@ -89,17 +89,14 @@ pub fn call(
                     }
                 }
             }
-            let out = resp
-                .into_string()
-                .map_err(|err| ApixError::Http(format!("Failed to read response body: {err}")))?;
+            let out = crate::http::read_response(resp)?;
             print_call_success(status, &status_text, headers, out)
         }
         Err(ureq::Error::Status(code, resp)) => {
             let status_text = resp.status_text().to_string();
             let headers = response_headers(&resp);
             eprintln!("HTTP {} {}", code, status_text);
-            let body = resp
-                .into_string()
+            let body = crate::http::read_response(resp)
                 .map_err(|err| ApixError::Http(format!("Failed to read error body: {err}")))?;
             print_call_error(code, &status_text, headers, body)?;
             Err(ApixError::Http(format!("HTTP status {code}")))

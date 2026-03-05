@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod error;
 mod exec;
+mod http;
 mod inventory;
 mod output;
 mod registry;
