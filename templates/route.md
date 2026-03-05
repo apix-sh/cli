@@ -1,7 +1,11 @@
 ---
 method: "{{ method }}"
 url: "{{ url }}"
-auth: "{{ auth }}"
+{%- match auth %}
+{%- when Some with (auth_val) %}
+auth: "{{ auth_val }}"
+{%- when None %}
+{%- endmatch %}
 content_type: "{{ content_type }}"
 ---
 

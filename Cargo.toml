@@ -31,6 +31,7 @@ termimad = "0.30"
 clap_complete = "4"
 regex = "1"
 url = "2"
+indexmap = "2"
 
 [profile.release]
 lto = true
@@ -41,5 +42,5 @@ opt-level = "z"
 [dev-dependencies]
 serial_test = "3"
 mockito = "1"
-indexmap = "2.13.0"
+
 strip-ansi-escapes = "0.2.1"

@@ -1,5 +1,5 @@
 use crate::error::ApixError;
-use openapiv3::OpenAPI;
+use openapiv3::{APIKeyLocation, Components, OpenAPI, ReferenceOr, SecurityScheme};
 
 #[derive(Debug, Clone)]
 pub struct ParsedSpec {
@@ -8,6 +8,7 @@ pub struct ParsedSpec {
     pub title: String,
     pub description: String,
     pub version: String,
+    pub auth: String,
 }
 
 pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
@@ -38,11 +39,19 @@ pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
         .map(|s| s.url.clone())
         .unwrap_or_default();
 
+    let auth = match &openapi.security {
+        Some(reqs) if !reqs.is_empty() => {
+            format_security_schemes(reqs, &openapi.components)
+        }
+        _ => "none".to_string(),
+    };
+
     Ok(ParsedSpec {
         title: openapi.info.title.clone(),
         description: openapi.info.description.clone().unwrap_or_default(),
         version: openapi.info.version.clone(),
         base_url,
+        auth,
         openapi,
     })
 }
@@ -66,6 +75,73 @@ fn detect_format(source: &str, content: &str) -> SpecFormat {
         Some('{') | Some('[') => SpecFormat::Json,
         Some(_) => SpecFormat::Unknown,
         None => SpecFormat::Unknown,
+    }
+}
+
+pub fn format_security_schemes(
+    requirements: &[indexmap::IndexMap<String, Vec<String>>],
+    components: &Option<Components>,
+) -> String {
+    let parts: Vec<String> = requirements
+        .iter()
+        .filter_map(|req| {
+            let scheme_parts: Vec<String> = req
+                .keys()
+                .map(|name| format_single_scheme(name, components))
+                .collect();
+            if scheme_parts.is_empty() {
+                None
+            } else {
+                Some(scheme_parts.join(" + "))
+            }
+        })
+        .collect();
+
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join(" | ")
+    }
+}
+
+fn format_single_scheme(name: &str, components: &Option<Components>) -> String {
+    let Some(comps) = components else {
+        return name.to_string();
+    };
+
+    let Some(scheme_ref) = comps.security_schemes.get(name) else {
+        return name.to_string();
+    };
+
+    match scheme_ref {
+        ReferenceOr::Reference { .. } => name.to_string(),
+        ReferenceOr::Item(scheme) => match scheme {
+            SecurityScheme::HTTP {
+                scheme,
+                bearer_format,
+                ..
+            } => {
+                if let Some(bf) = bearer_format {
+                    format!("{scheme} ({bf})")
+                } else {
+                    scheme.to_string()
+                }
+            }
+            SecurityScheme::APIKey {
+                location,
+                name: key_name,
+                ..
+            } => {
+                let loc = match location {
+                    APIKeyLocation::Query => "query",
+                    APIKeyLocation::Header => "header",
+                    APIKeyLocation::Cookie => "cookie",
+                };
+                format!("apiKey ({loc}: {key_name})")
+            }
+            SecurityScheme::OAuth2 { .. } => "oauth2".to_string(),
+            SecurityScheme::OpenIDConnect { .. } => "openIdConnect".to_string(),
+        },
     }
 }
 
@@ -137,5 +213,121 @@ paths: {}"#;
         assert!(matches!(detect_format("spec.txt", " [ "), SpecFormat::Json));
         assert!(matches!(detect_format("spec.txt", " openapi: 3.0.0 "), SpecFormat::Unknown));
         assert!(matches!(detect_format("spec.txt", ""), SpecFormat::Unknown));
+    }
+
+    #[test]
+    fn format_security_bearer() {
+        let components = Some(openapiv3::Components {
+            security_schemes: indexmap::indexmap! {
+                "bearerAuth".to_string() => ReferenceOr::Item(SecurityScheme::HTTP {
+                    scheme: "bearer".to_string(),
+                    bearer_format: None,
+                    description: None,
+                    extensions: Default::default(),
+                }),
+            },
+            ..Default::default()
+        });
+        let reqs = vec![indexmap::indexmap! { "bearerAuth".to_string() => vec![] }];
+        assert_eq!(format_security_schemes(&reqs, &components), "bearer");
+    }
+
+    #[test]
+    fn format_security_bearer_with_format() {
+        let components = Some(openapiv3::Components {
+            security_schemes: indexmap::indexmap! {
+                "bearerAuth".to_string() => ReferenceOr::Item(SecurityScheme::HTTP {
+                    scheme: "bearer".to_string(),
+                    bearer_format: Some("JWT".to_string()),
+                    description: None,
+                    extensions: Default::default(),
+                }),
+            },
+            ..Default::default()
+        });
+        let reqs = vec![indexmap::indexmap! { "bearerAuth".to_string() => vec![] }];
+        assert_eq!(format_security_schemes(&reqs, &components), "bearer (JWT)");
+    }
+
+    #[test]
+    fn format_security_api_key() {
+        let components = Some(openapiv3::Components {
+            security_schemes: indexmap::indexmap! {
+                "apiKeyAuth".to_string() => ReferenceOr::Item(SecurityScheme::APIKey {
+                    location: APIKeyLocation::Header,
+                    name: "X-API-KEY".to_string(),
+                    description: None,
+                    extensions: Default::default(),
+                }),
+            },
+            ..Default::default()
+        });
+        let reqs = vec![indexmap::indexmap! { "apiKeyAuth".to_string() => vec![] }];
+        assert_eq!(
+            format_security_schemes(&reqs, &components),
+            "apiKey (header: X-API-KEY)"
+        );
+    }
+
+    #[test]
+    fn format_security_oauth2() {
+        let components = Some(openapiv3::Components {
+            security_schemes: indexmap::indexmap! {
+                "oauth".to_string() => ReferenceOr::Item(SecurityScheme::OAuth2 {
+                    flows: openapiv3::OAuth2Flows::default(),
+                    description: None,
+                    extensions: Default::default(),
+                }),
+            },
+            ..Default::default()
+        });
+        let reqs = vec![indexmap::indexmap! { "oauth".to_string() => vec![] }];
+        assert_eq!(format_security_schemes(&reqs, &components), "oauth2");
+    }
+
+    #[test]
+    fn format_security_multiple_alternatives() {
+        let components = Some(openapiv3::Components {
+            security_schemes: indexmap::indexmap! {
+                "bearerAuth".to_string() => ReferenceOr::Item(SecurityScheme::HTTP {
+                    scheme: "bearer".to_string(),
+                    bearer_format: None,
+                    description: None,
+                    extensions: Default::default(),
+                }),
+                "apiKeyAuth".to_string() => ReferenceOr::Item(SecurityScheme::APIKey {
+                    location: APIKeyLocation::Header,
+                    name: "X-API-KEY".to_string(),
+                    description: None,
+                    extensions: Default::default(),
+                }),
+            },
+            ..Default::default()
+        });
+        let reqs = vec![
+            indexmap::indexmap! { "bearerAuth".to_string() => vec![] },
+            indexmap::indexmap! { "apiKeyAuth".to_string() => vec![] },
+        ];
+        assert_eq!(
+            format_security_schemes(&reqs, &components),
+            "bearer | apiKey (header: X-API-KEY)"
+        );
+    }
+
+    #[test]
+    fn format_security_empty_requirements() {
+        let components = Some(openapiv3::Components::default());
+        let reqs: Vec<indexmap::IndexMap<String, Vec<String>>> = vec![];
+        assert_eq!(format_security_schemes(&reqs, &components), "none");
+    }
+
+    #[test]
+    fn format_security_unknown_scheme_falls_back_to_name() {
+        let components = Some(openapiv3::Components::default());
+        let reqs = vec![indexmap::indexmap! { "unknownScheme".to_string() => vec![] }];
+        assert_eq!(
+            format_security_schemes(&reqs, &components),
+            "unknownScheme"
+        );
     }
 }

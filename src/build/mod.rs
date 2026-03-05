@@ -76,7 +76,7 @@ fn target_version_root(
 fn write_metadata(parsed: &ParsedSpec, root: &Path) -> Result<(), ApixError> {
     let tpl = MetadataTemplate {
         base_url: &parsed.base_url,
-        auth: "Unknown",
+        auth: &parsed.auth,
         title: &parsed.title,
         description: &parsed.description,
         version: &parsed.version,
@@ -207,6 +207,45 @@ mod tests {
         .expect("overwrite import");
         assert!(!out_root.join("petstore/v1/sentinel.txt").exists());
         assert!(out_root.join("petstore/v1/_metadata.md").exists());
+
+        let _ = std::fs::remove_dir_all(&out_root);
+    }
+
+    #[test]
+    #[serial]
+    fn import_auth_extraction_generates_correct_frontmatter() {
+        let out_root =
+            std::env::temp_dir().join(format!("apix-it-auth-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out_root);
+
+        import(
+            &fixture("petstore_auth.json"),
+            "petauth",
+            Some(out_root.to_string_lossy().as_ref()),
+            false,
+        )
+        .expect("import");
+
+        let version_root = out_root.join("petauth/v1");
+
+        // _metadata.md should have global auth = "bearer"
+        let metadata = std::fs::read_to_string(version_root.join("_metadata.md")).expect("read metadata");
+        assert!(metadata.contains("auth: \"bearer\""), "metadata should contain bearer auth, got:\n{metadata}");
+
+        // /pets GET inherits global auth → no auth: line in route frontmatter
+        let pets_get = std::fs::read_to_string(version_root.join("pets/GET.md")).expect("read pets GET");
+        // Check the frontmatter section only (between --- delimiters)
+        let fm_end = pets_get[3..].find("---").unwrap() + 3;
+        let fm_section = &pets_get[..fm_end];
+        assert!(!fm_section.contains("auth:"), "inherited route should NOT have auth: line, got:\n{fm_section}");
+
+        // /pets/{petId} GET has security override → auth: "apiKey (header: X-API-KEY)"
+        let pet_get = std::fs::read_to_string(version_root.join("pets/{petId}/GET.md")).expect("read pet GET");
+        assert!(pet_get.contains(r#"auth: "apiKey (header: X-API-KEY)""#), "overridden route should have apiKey auth, got:\n{pet_get}");
+
+        // /health GET has security: [] → auth: "none"
+        let health_get = std::fs::read_to_string(version_root.join("health/GET.md")).expect("read health GET");
+        assert!(health_get.contains(r#"auth: "none""#), "no-auth route should have auth: none, got:\n{health_get}");
 
         let _ = std::fs::remove_dir_all(&out_root);
     }

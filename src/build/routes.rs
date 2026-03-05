@@ -31,7 +31,7 @@ struct ResponseRow {
 struct RouteTemplate<'a> {
     method: &'a str,
     url: &'a str,
-    auth: &'a str,
+    auth: Option<&'a str>,
     content_type: &'a str,
     summary: &'a str,
     description: &'a str,
@@ -190,10 +190,19 @@ fn emit_operation(
     let description = op.description.as_deref().unwrap_or_default();
     let url = format!("{}{}", parsed.base_url, path);
 
+    let auth_string = match &op.security {
+        Some(reqs) if reqs.is_empty() => Some("none".to_string()),
+        Some(reqs) => Some(super::parser::format_security_schemes(
+            reqs,
+            &parsed.openapi.components,
+        )),
+        None => None,
+    };
+
     let tpl = RouteTemplate {
         method,
         url: &url,
-        auth: "Unknown",
+        auth: auth_string.as_deref(),
         content_type: &content_type,
         summary,
         description,
