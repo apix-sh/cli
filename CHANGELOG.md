@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/apix-sh/cli/compare/v0.1.4...v0.1.5) - 2026-03-05
+
+### Added
+
+- Parse and display OpenAPI security scheme information in generated routes and templates.
+- Add `apix info` command to display API metadata and introduce schema reference resolution.
+- Enable filtering `apix ls` output by a path prefix for specific namespace versions.
+
+### Other
+
+- update README
+
 ## [0.1.4](https://github.com/apix-sh/cli/compare/v0.1.3...v0.1.4) - 2026-03-04
 
 ### Added

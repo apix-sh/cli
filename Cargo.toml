@@ -1,6 +1,6 @@
 [package]
 name = "apix-cli"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "API explorer CLI for AI agents and humans – search, browse, and execute APIs from your terminal"
 license = "MIT"
