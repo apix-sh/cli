@@ -109,6 +109,10 @@ cargo run -- ls petstore
 # List detailed routes for a namespace/version
 cargo run -- ls petstore/v1
 cargo run -- ls petstore/v1 --source core
+
+# Filter routes by path prefix
+cargo run -- ls petstore/v1/pet
+cargo run -- ls petstore/v1/store/order
 ```
 
 ## Command Reference
@@ -117,7 +121,7 @@ cargo run -- ls petstore/v1 --source core
 - `apix update [--source <name>] [--all-sources]`: Clone/pull source registry metadata
 - `apix pull <namespace>[/<version>] [--source <name>]`: Sparse-checkout a namespace (or specific version) from a source (default: `core`)
 - `apix import <source> --name <namespace> [--output <vault_root>] [--overwrite]`: Generate vault files from an OpenAPI spec
-- `apix ls [namespace|namespace/version] [--source <name>]`: List local inventory or detailed routes
+- `apix ls [namespace|namespace/version[/path...]] [--source <name>]`: List local inventory or detailed routes
 - `apix info <namespace/version> [--source <name>]`: Print API metadata from frontmatter
 - `apix show <route> [--source <name>]`: Print full markdown for a route/type file
 - `apix peek <route> [--source <name>]`: Print frontmatter + condensed required input info
@@ -231,6 +235,7 @@ If a short route exists in multiple sources, `apix` returns an ambiguity error a
 - `apix ls`: list namespaces grouped by source
 - `apix ls <namespace>`: list versions for a namespace across sources
 - `apix ls <namespace>/<version>`: list paths and methods with one-line route summaries
+- `apix ls <namespace>/<version>/<path...>`: filter routes to those under the given path prefix
 - Route-detail mode resolves from one source only: `--source` if provided, else first match by priority (`.local` -> `core` -> third-party)
 
 Registry lifecycle:
