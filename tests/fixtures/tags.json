@@ -1,0 +1,18 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Tags API",
+    "version": "v1"
+  },
+  "tags": [
+    { "name": "pet", "description": "Pets related" },
+    { "name": "store" }
+  ],
+  "paths": {
+    "/ping": {
+      "get": {
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  }
+}

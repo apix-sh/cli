@@ -267,6 +267,10 @@ fn build_registry_from_root(root: &Path, local_tags: bool) -> Result<Registry, A
         let mut versions = Vec::new();
         let mut title = namespace.clone();
         let mut description = String::new();
+        let mut tags = BTreeSet::new();
+        if local_tags {
+            tags.insert("local".to_string());
+        }
 
         for ver_entry in std::fs::read_dir(&ns_path)? {
             let ver_entry = ver_entry?;
@@ -279,12 +283,15 @@ fn build_registry_from_root(root: &Path, local_tags: bool) -> Result<Registry, A
                 continue;
             }
             versions.push(version);
-            if let Ok((t, d)) = parse_metadata_markdown(&meta) {
+            if let Ok((t, d, v_tags)) = parse_metadata_markdown(&meta) {
                 if title == namespace && !t.is_empty() {
                     title = t;
                 }
                 if description.is_empty() && !d.is_empty() {
                     description = d;
+                }
+                for tag in v_tags {
+                    tags.insert(tag);
                 }
             }
         }
@@ -305,11 +312,7 @@ fn build_registry_from_root(root: &Path, local_tags: bool) -> Result<Registry, A
                     description
                 },
                 versions,
-                tags: if local_tags {
-                    vec!["local".to_string()]
-                } else {
-                    vec![]
-                },
+                tags: tags.into_iter().collect(),
             },
         );
     }
@@ -599,12 +602,36 @@ fn write_registry_file(path: &Path, registry: &Registry) -> Result<(), ApixError
     Ok(())
 }
 
-fn parse_metadata_markdown(path: &Path) -> Result<(String, String), ApixError> {
+fn parse_metadata_markdown(path: &Path) -> Result<(String, String, Vec<String>), ApixError> {
     let raw = std::fs::read_to_string(path)?;
     let mut title = String::new();
     let mut desc = String::new();
+    let mut tags = Vec::new();
+    let mut in_frontmatter = false;
+
     for line in raw.lines() {
         let t = line.trim();
+        if t == "---" {
+            in_frontmatter = !in_frontmatter;
+            continue;
+        }
+
+        if in_frontmatter {
+            if t.starts_with("tags:") {
+                let tags_str = t.trim_start_matches("tags:").trim();
+                if tags_str.starts_with('[') && tags_str.ends_with(']') {
+                    let tags_list = &tags_str[1..tags_str.len() - 1];
+                    for tag in tags_list.split(',') {
+                        let tag = tag.trim();
+                        if !tag.is_empty() {
+                            tags.push(tag.to_string());
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         if title.is_empty() && t.starts_with("# ") {
             title = t.trim_start_matches("# ").trim().to_string();
             continue;
@@ -616,7 +643,7 @@ fn parse_metadata_markdown(path: &Path) -> Result<(String, String), ApixError> {
             desc = t.to_string();
         }
     }
-    Ok((title, desc))
+    Ok((title, desc, tags))
 }
 
 #[cfg(test)]

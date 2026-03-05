@@ -1,6 +1,7 @@
 ---
 base_url: "{{ base_url }}"
 auth: "{{ auth }}"
+tags: [{{ tags|join(", ") }}]
 ---
 
 # {{ title }}

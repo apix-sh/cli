@@ -17,6 +17,7 @@ struct MetadataTemplate<'a> {
     title: &'a str,
     description: &'a str,
     version: &'a str,
+    tags: Vec<String>,
 }
 
 pub fn import(
@@ -80,6 +81,7 @@ fn write_metadata(parsed: &ParsedSpec, root: &Path) -> Result<(), ApixError> {
         title: &parsed.title,
         description: &parsed.description,
         version: &parsed.version,
+        tags: parsed.tags.clone(),
     };
     let out = tpl
         .render()
@@ -248,5 +250,34 @@ mod tests {
         assert!(health_get.contains(r#"auth: "none""#), "no-auth route should have auth: none, got:\n{health_get}");
 
         let _ = std::fs::remove_dir_all(&out_root);
+    }
+    
+    #[test]
+    #[serial]
+    fn import_extracts_tags_and_indexes_them() {
+        let home = std::env::temp_dir().join(format!("apix-it-tags-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        set_var("APIX_HOME", &home);
+
+        import(&fixture("tags.json"), "tagsapi", None, false).expect("import");
+
+        let version_root = home.join("vaults/.local/tagsapi/v1");
+
+        // 1. Verify _metadata.md contains tags
+        let metadata =
+            std::fs::read_to_string(version_root.join("_metadata.md")).expect("read metadata");
+        assert!(
+            metadata.contains("tags: [pet, store]"),
+            "metadata should contain tags, got:\n{metadata}"
+        );
+
+        // 2. Verify registry.json contains tags
+        let reg = crate::registry::Registry::load(".local").expect("load registry");
+        let entry = reg.apis.get("tagsapi").expect("tagsapi entry missing");
+        assert!(entry.tags.contains(&"pet".to_string()));
+        assert!(entry.tags.contains(&"store".to_string()));
+        assert!(entry.tags.contains(&"local".to_string()));
+
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

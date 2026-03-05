@@ -10,6 +10,7 @@ pub struct ParsedSpec {
     pub description: String,
     pub version: String,
     pub auth: String,
+    pub tags: Vec<String>,
 }
 
 pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
@@ -47,12 +48,14 @@ pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
         _ => "none".to_string(),
     };
 
+    let tags = openapi.tags.iter().map(|t| t.name.clone()).collect();
     Ok(ParsedSpec {
         title: openapi.info.title.clone(),
         description: openapi.info.description.clone().unwrap_or_default(),
         version: openapi.info.version.clone(),
         base_url,
         auth,
+        tags,
         openapi,
     })
 }
