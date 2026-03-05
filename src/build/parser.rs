@@ -1,5 +1,6 @@
 use crate::error::ApixError;
 use openapiv3::{APIKeyLocation, Components, OpenAPI, ReferenceOr, SecurityScheme};
+use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct ParsedSpec {
@@ -12,7 +13,7 @@ pub struct ParsedSpec {
 }
 
 pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
-    let content = if source.starts_with("http://") || source.starts_with("https://") {
+    let raw = if source.starts_with("http://") || source.starts_with("https://") {
         ureq::get(source)
             .call()
             .map_err(|err| ApixError::Http(format!("Failed to fetch spec: {err}")))?
@@ -21,6 +22,7 @@ pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
     } else {
         std::fs::read_to_string(source)?
     };
+    let content = sanitize_large_integers(&raw);
 
     let openapi: OpenAPI = match detect_format(source, &content) {
         SpecFormat::Yaml => serde_yaml::from_str(&content)
@@ -61,6 +63,41 @@ enum SpecFormat {
     Json,
     Yaml,
     Unknown,
+}
+
+/// YAML 1.2 natively supports only 64-bit integers. Some OpenAPI specs (e.g., OpenAI's) use
+/// integers like `-9223372036854776000` in `minimum`/`maximum` fields as a "no practical limit"
+/// sentinel. These values fall just outside `i64` range, so `serde_yaml` silently converts them
+/// to floats, which then fail to deserialize into `openapiv3`'s `i128` schema bounds.
+///
+/// This function rewrites such out-of-range integer literals to `i64::MIN` / `i64::MAX`
+/// in the raw spec text before it is parsed.
+fn sanitize_large_integers(content: &str) -> String {
+    // Match bare integers (possibly negative) that appear as YAML/JSON values.
+    // We look specifically for digit sequences longer than 19 chars or that parse > i64::MAX.
+    let re = Regex::new(r"(?m)(:\s*)(-?\d{15,})").expect("valid regex");
+    re.replace_all(content, |caps: &regex::Captures| {
+        let prefix = &caps[1];
+        let num_str = &caps[2];
+        // Try to parse as i128 first (to detect overflow vs. i64).
+        if let Ok(n) = num_str.parse::<i128>() {
+            if n > i64::MAX as i128 {
+                return format!("{}{}", prefix, i64::MAX);
+            } else if n < i64::MIN as i128 {
+                return format!("{}{}", prefix, i64::MIN);
+            }
+        } else {
+            // Doesn't even fit in i128: clamp by sign.
+            if num_str.starts_with('-') {
+                return format!("{}{}", prefix, i64::MIN);
+            } else {
+                return format!("{}{}", prefix, i64::MAX);
+            }
+        }
+        // Within i64 range — leave unchanged.
+        format!("{}{}", prefix, num_str)
+    })
+    .into_owned()
 }
 
 fn detect_format(source: &str, content: &str) -> SpecFormat {
@@ -329,5 +366,51 @@ paths: {}"#;
             format_security_schemes(&reqs, &components),
             "unknownScheme"
         );
+    }
+
+    #[test]
+    fn parses_spec_with_large_integer() {
+        // Exact values from the OpenAI API spec — these overflow i64 and were causing
+        // serde_yaml to silently convert them to floats, breaking openapiv3 deserialization.
+        let spec = r#"openapi: 3.0.0
+info:
+  title: Large Int Test
+  version: v1
+paths:
+  /test:
+    post:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: integer
+                minimum: -9223372036854776000
+                maximum: 9223372036854776000
+"#;
+        let path = std::env::temp_dir().join(format!("apix-parser-large-int-{}.yaml", std::process::id()));
+        std::fs::write(&path, spec).expect("write spec");
+
+        let res = parse_spec(path.to_str().expect("path str"));
+        assert!(res.is_ok(), "Should parse spec with large integers: {:?}", res.err());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn sanitize_large_integers_clamps_out_of_range() {
+        let input = "minimum: -9223372036854776000\nmaximum: 9223372036854776000\nnormal: 12345";
+        let output = sanitize_large_integers(input);
+        assert!(output.contains(&format!("minimum: {}", i64::MIN)));
+        assert!(output.contains(&format!("maximum: {}", i64::MAX)));
+        assert!(output.contains("normal: 12345"), "in-range values must be unchanged");
+    }
+
+    #[test]
+    fn sanitize_large_integers_leaves_normal_values_intact() {
+        let input = "seed: 42\nlimit: 100\noffset: -500";
+        let output = sanitize_large_integers(input);
+        assert_eq!(input, output);
     }
 }
