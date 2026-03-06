@@ -90,7 +90,8 @@ _(None)_
 {% for h in r.headers -%}
 | `{{ h.name }}` | {{ h.required }} | {{ h.param_type }} | {{ h.description }} |
 {% endfor %}
-{%- endif -%}
+
+{% endif -%}
 {% if !r.content.is_empty() -%}
 {{ r.content }}
 
