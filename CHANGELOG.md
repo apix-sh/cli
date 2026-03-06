@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/apix-sh/cli/compare/v0.1.5...v0.1.6) - 2026-03-05
+
+### Added
+
+- Improve registry module output by wrapping and indenting descriptions and tags using the new `textwrap` dependency.
+- Extract and index API tags from OpenAPI specifications, including them in metadata and registry entries.
+- Implement a utility to read HTTP response bodies with an increased 500MB safety limit, replacing direct `ureq::Response::into_string` calls.
+
+### Fixed
+
+- Clamp out-of-range integers in OpenAPI specs to prevent deserialization errors.
+
 ## [0.1.5](https://github.com/apix-sh/cli/compare/v0.1.4...v0.1.5) - 2026-03-05
 
 ### Added
