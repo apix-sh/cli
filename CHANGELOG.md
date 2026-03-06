@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/apix-sh/cli/compare/v0.1.7...v0.1.8) - 2026-03-06
+
+### Fixed
+
+- ignore specific metadata files in Git status checks to prevent unintended resets.
+
 ## [0.1.7](https://github.com/apix-sh/cli/compare/v0.1.6...v0.1.7) - 2026-03-06
 
 ### Added
