@@ -34,6 +34,7 @@ pub fn update_registry(source: &str) -> Result<(), ApixError> {
             Some(&core),
         )?;
     } else {
+        restore_local_changes(&core)?;
         run_git(["pull"], Some(&core))?;
     }
 
@@ -79,9 +80,8 @@ pub fn update_registry_metadata_only(source: &str) -> Result<(), ApixError> {
         return Ok(());
     }
 
-    run_git(["fetch", "origin"], Some(&root))?;
-    let content = run_git_capture(["show", "FETCH_HEAD:registry.json"], Some(&root))?;
-    std::fs::write(root.join("registry.json"), content)?;
+    restore_local_changes(&root)?;
+    run_git(["pull"], Some(&root))?;
     Ok(())
 }
 
@@ -135,6 +135,7 @@ pub fn pull_namespace(namespace_arg: &str, source: &str) -> Result<(), ApixError
         format!("{namespace}/")
     };
 
+    restore_local_changes(&core)?;
     run_git(["sparse-checkout", "add", &checkout_path], Some(&core))?;
     run_git(["pull"], Some(&core))?;
 
@@ -247,6 +248,19 @@ fn run_git_capture<const N: usize>(
         args,
         stderr.trim()
     )))
+}
+
+fn restore_local_changes(root: &std::path::Path) -> Result<(), ApixError> {
+    if !root.join(".git").exists() {
+        return Ok(());
+    }
+    let status = run_git_capture(["status", "--porcelain"], Some(root))?;
+    if !status.trim().is_empty() {
+        output::eprintln_warn("Discarding local changes to vault before sync...");
+        run_git(["reset", "--hard", "HEAD"], Some(root))?;
+        run_git(["clean", "-fd"], Some(root))?;
+    }
+    Ok(())
 }
 
 fn summarize_dir(root: &std::path::Path) -> Result<(usize, u64), ApixError> {
