@@ -30,8 +30,12 @@ Namespace/version content layout:
 ├── <namespace>/
 │   └── <version>/
 │       ├── _metadata.md
-│       ├── _types/
-│       │   └── *.md
+│       ├── _components/
+│       │   ├── schemas/
+│       │   │   └── *.md
+│       │   ├── parameters/
+│       │   │   └── *.md
+│       │   └── ...
 │       └── <route path>/
 │           └── <METHOD>.md
 ```

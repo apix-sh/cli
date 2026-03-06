@@ -75,7 +75,7 @@ pub fn info(target: &str, source_override: Option<&str>) -> Result<(), ApixError
 pub fn peek(route: &str, source_override: Option<&str>) -> Result<(), ApixError> {
     let resolved = resolver::resolve_route_path(route, source_override)?;
     let content = std::fs::read_to_string(resolved.file_path)?;
-    if resolved.relative.starts_with(Path::new("_types")) {
+    if resolved.relative.starts_with(Path::new("_components")) {
         let (frontmatter, _) =
             frontmatter::extract_frontmatter::<frontmatter::TypeFrontmatter>(&content)?;
         let mut out = String::new();

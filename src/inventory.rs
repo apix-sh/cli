@@ -249,7 +249,7 @@ fn collect_route_groups(
             Err(_) => continue,
         };
         let rel_str = rel.to_string_lossy();
-        if rel_str == "_metadata.md" || rel_str.starts_with("_types/") {
+        if rel_str == "_metadata.md" || rel_str.starts_with("_components/") {
             continue;
         }
 
@@ -429,7 +429,7 @@ fn count_routes(version_root: &Path) -> usize {
                 Err(_) => return false,
             };
             let s = rel.to_string_lossy();
-            !s.starts_with("_types/") && s != "_metadata.md"
+            !s.starts_with("_components/") && s != "_metadata.md"
         })
         .count()
 }

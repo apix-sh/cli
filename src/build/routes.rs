@@ -174,17 +174,17 @@ fn emit_operation(
         .split('/')
         .filter(|s| !s.is_empty())
         .count();
-    let type_dir_rel = if depth == 0 {
-        "_types".to_string()
+    let base_components_rel = if depth == 0 {
+        "_components".to_string()
     } else {
-        format!("{}_types", "../".repeat(depth))
+        format!("{}_components", "../".repeat(depth))
     };
 
     let (path_params, query_params, header_params, cookie_params) =
-        collect_parameters(path_item, op, &type_dir_rel);
+        collect_parameters(path_item, op, &base_components_rel);
     let content_type = request_content_type(op).unwrap_or_else(|| "application/json".to_string());
-    let request_body = request_body_text(op, namespace, &parsed.version, &type_dir_rel);
-    let responses = response_rows(op, namespace, &parsed.version, &type_dir_rel);
+    let request_body = request_body_text(op, namespace, &parsed.version, &base_components_rel);
+    let responses = response_rows(op, namespace, &parsed.version, &base_components_rel);
 
     let summary = op.summary.as_deref().unwrap_or(method);
     let description = op.description.as_deref().unwrap_or_default();
@@ -242,7 +242,7 @@ fn route_dir(root: &Path, path: &str) -> PathBuf {
 fn collect_parameters(
     path_item: &PathItem,
     op: &Operation,
-    type_dir_rel: &str,
+    base_components_rel: &str,
 ) -> (Vec<ParamRow>, Vec<ParamRow>, Vec<ParamRow>, Vec<ParamRow>) {
     let mut path_rows = Vec::new();
     let mut query_rows = Vec::new();
@@ -256,15 +256,11 @@ fn collect_parameters(
     for param_ref in all_params {
         match param_ref {
             ReferenceOr::Reference { reference } => {
-                let name = reference
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(reference)
-                    .to_string();
+                let link = ref_to_link(reference, base_components_rel);
                 query_rows.push(ParamRow {
-                    name: format!("{} (unresolved)", name),
-                    required: "Unknown".to_string(),
-                    param_type: format!("[{name}]({type_dir_rel}/{name}.md)"),
+                    name: "Reference".to_string(),
+                    required: "N/A".to_string(),
+                    param_type: link,
                     description: String::new(),
                 });
             }
@@ -277,7 +273,7 @@ fn collect_parameters(
                 } => {
                     query_rows.push(row_from_parameter_data(
                         parameter_data,
-                        type_dir_rel,
+                        base_components_rel,
                         Some(format!("{:?}", style)),
                         Some(*allow_reserved),
                     ));
@@ -288,7 +284,7 @@ fn collect_parameters(
                 } => {
                     path_rows.push(row_from_parameter_data(
                         parameter_data,
-                        type_dir_rel,
+                        base_components_rel,
                         Some(format!("{:?}", style)),
                         None,
                     ));
@@ -299,7 +295,7 @@ fn collect_parameters(
                 } => {
                     header_rows.push(row_from_parameter_data(
                         parameter_data,
-                        type_dir_rel,
+                        base_components_rel,
                         Some(format!("{:?}", style)),
                         None,
                     ));
@@ -310,7 +306,7 @@ fn collect_parameters(
                 } => {
                     cookie_rows.push(row_from_parameter_data(
                         parameter_data,
-                        type_dir_rel,
+                        base_components_rel,
                         Some(format!("{:?}", style)),
                         None,
                     ));
@@ -324,18 +320,17 @@ fn collect_parameters(
 
 fn row_from_parameter_data(
     data: &openapiv3::ParameterData,
-    type_dir_rel: &str,
+    base_components_rel: &str,
     style: Option<String>,
     allow_reserved: Option<bool>,
 ) -> ParamRow {
     let ty = match &data.format {
         ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
             ReferenceOr::Reference { reference } => {
-                let name = reference.rsplit('/').next().unwrap_or(reference);
-                format!("[{name}]({type_dir_rel}/{name}.md)")
+                ref_to_link(reference, base_components_rel)
             }
             ReferenceOr::Item(schema) => {
-                super::types::kind_to_string(&schema.schema_kind, type_dir_rel)
+                super::components::kind_to_string(&schema.schema_kind, &format!("{}/schemas", base_components_rel))
             }
         },
         ParameterSchemaOrContent::Content(content) => {
@@ -385,12 +380,11 @@ fn request_content_type(op: &Operation) -> Option<String> {
     }
 }
 
-fn request_body_text(op: &Operation, namespace: &str, version: &str, type_dir_rel: &str) -> String {
+fn request_body_text(op: &Operation, namespace: &str, version: &str, base_components_rel: &str) -> String {
     match &op.request_body {
         None => String::new(),
         Some(ReferenceOr::Reference { reference }) => {
-            let name = reference.rsplit('/').next().unwrap_or(reference);
-            format!("[{name}]({type_dir_rel}/{name}.md)")
+            ref_to_link(reference, base_components_rel)
         }
         Some(ReferenceOr::Item(item)) => {
             if item.content.is_empty() {
@@ -410,7 +404,7 @@ fn request_body_text(op: &Operation, namespace: &str, version: &str, type_dir_re
                     media_type,
                     namespace,
                     version,
-                    type_dir_rel,
+                    base_components_rel,
                 ));
             }
             out.trim_end().to_string()
@@ -424,7 +418,7 @@ fn inline_body_doc(
     media_type: &MediaType,
     _namespace: &str,
     _version: &str,
-    type_dir_rel: &str,
+    base_components_rel: &str,
 ) -> String {
     let Some(schema_ref) = &media_type.schema else {
         return format!("No schema provided for `{ctype}`.");
@@ -434,11 +428,10 @@ fn inline_body_doc(
     out.push_str(&format!("{title_prefix} (`{ctype}`)\n"));
     match schema_ref {
         ReferenceOr::Reference { reference } => {
-            let name = reference.rsplit('/').next().unwrap_or(reference);
-            out.push_str(&format!("[{name}]({type_dir_rel}/{name}.md)\n"));
+            out.push_str(&format!("{}\n", ref_to_link(reference, base_components_rel)));
         }
         ReferenceOr::Item(schema) => {
-            let rows = schema_property_rows(schema, type_dir_rel);
+            let rows = schema_property_rows(schema, base_components_rel);
             if !rows.is_empty() {
                 out.push_str("| Property | Required | Type | Description |\n");
                 out.push_str("| :--- | :---: | :--- | :--- |\n");
@@ -452,7 +445,7 @@ fn inline_body_doc(
                     ));
                 }
             } else {
-                let kind_str = super::types::kind_to_string(&schema.schema_kind, type_dir_rel);
+                let kind_str = super::components::kind_to_string(&schema.schema_kind, &format!("{}/schemas", base_components_rel));
                 if kind_str.starts_with("array<") {
                     out.push_str(&format!("{kind_str}\n"));
                 } else {
@@ -491,7 +484,7 @@ fn inline_body_doc(
 
 fn schema_property_rows(
     schema: &Schema,
-    type_dir_rel: &str,
+    base_components_rel: &str,
 ) -> Vec<(String, bool, String, String)> {
     match &schema.schema_kind {
         SchemaKind::Type(Type::Object(obj)) => obj
@@ -500,11 +493,10 @@ fn schema_property_rows(
             .map(|(name, prop)| {
                 let (ty, desc) = match prop {
                     ReferenceOr::Reference { reference } => {
-                        let p = reference.rsplit('/').next().unwrap_or(reference);
-                        (format!("[{p}]({type_dir_rel}/{p}.md)"), String::new())
+                        (ref_to_link(reference, base_components_rel), String::new())
                     }
                     ReferenceOr::Item(inner) => (
-                        super::types::kind_to_string(&inner.schema_kind, type_dir_rel),
+                        super::components::kind_to_string(&inner.schema_kind, &format!("{}/schemas", base_components_rel)),
                         inner.schema_data.description.clone().unwrap_or_default(),
                     ),
                 };
@@ -569,7 +561,7 @@ fn response_rows(
     op: &Operation,
     namespace: &str,
     version: &str,
-    type_dir_rel: &str,
+    base_components_rel: &str,
 ) -> Vec<ResponseRow> {
     let mut rows = Vec::new();
     for (status, response_ref) in &op.responses.responses {
@@ -578,7 +570,7 @@ fn response_rows(
             StatusCode::Range(range) => format!("{range:?}xx"),
         };
         let (desc, headers, content) =
-            extract_response_details(response_ref, namespace, version, type_dir_rel);
+            extract_response_details(response_ref, namespace, version, base_components_rel);
         rows.push(ResponseRow {
             status: status_text,
             description: desc,
@@ -588,7 +580,7 @@ fn response_rows(
     }
     if let Some(default) = &op.responses.default {
         let (desc, headers, content) =
-            extract_response_details(default, namespace, version, type_dir_rel);
+            extract_response_details(default, namespace, version, base_components_rel);
         rows.push(ResponseRow {
             status: "default".to_string(),
             description: desc,
@@ -603,28 +595,27 @@ fn extract_response_details(
     response_ref: &ReferenceOr<Response>,
     namespace: &str,
     version: &str,
-    type_dir_rel: &str,
+    base_components_rel: &str,
 ) -> (String, Vec<ParamRow>, String) {
     match response_ref {
         ReferenceOr::Reference { reference } => {
-            (format!("Reference: {reference}"), Vec::new(), String::new())
+            (format!("Reference: {}", ref_to_link(reference, base_components_rel)), Vec::new(), String::new())
         }
         ReferenceOr::Item(item) => {
             let mut headers = Vec::new();
             for (name, header_ref) in &item.headers {
                 match header_ref {
                     ReferenceOr::Reference { reference } => {
-                        let ref_name = reference.rsplit('/').next().unwrap_or(reference);
                         headers.push(ParamRow {
                             name: format!("{name} (ref)"),
                             required: "Unknown".to_string(),
-                            param_type: format!("[{ref_name}]({type_dir_rel}/{ref_name}.md)"),
+                            param_type: ref_to_link(reference, base_components_rel),
                             description: String::new(),
                         });
                     }
-                    ReferenceOr::Item(header) => {
-                        headers.push(row_from_header(name, header, type_dir_rel));
-                    }
+                ReferenceOr::Item(header) => {
+                    headers.push(row_from_header(name, header, base_components_rel));
+                }
                 }
             }
 
@@ -637,7 +628,7 @@ fn extract_response_details(
                     media_type,
                     namespace,
                     version,
-                    type_dir_rel,
+                    base_components_rel,
                 ));
             }
 
@@ -650,15 +641,14 @@ fn extract_response_details(
     }
 }
 
-fn row_from_header(name: &str, header: &openapiv3::Header, type_dir_rel: &str) -> ParamRow {
+fn row_from_header(name: &str, header: &openapiv3::Header, base_components_rel: &str) -> ParamRow {
     let ty = match &header.format {
         ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
             ReferenceOr::Reference { reference } => {
-                let ref_name = reference.rsplit('/').next().unwrap_or(reference);
-                format!("[{ref_name}]({type_dir_rel}/{ref_name}.md)")
+                ref_to_link(reference, base_components_rel)
             }
             ReferenceOr::Item(schema) => {
-                super::types::kind_to_string(&schema.schema_kind, type_dir_rel)
+                super::components::kind_to_string(&schema.schema_kind, &format!("{}/schemas", base_components_rel))
             }
         },
         ParameterSchemaOrContent::Content(content) => {
@@ -674,6 +664,19 @@ fn row_from_header(name: &str, header: &openapiv3::Header, type_dir_rel: &str) -
         required: if header.required { "Yes" } else { "No" }.to_string(),
         param_type: ty,
         description: header.description.clone().unwrap_or_default(),
+    }
+}
+
+
+fn ref_to_link(reference: &str, base_components_rel: &str) -> String {
+    let parts: Vec<&str> = reference.split('/').collect();
+    if parts.len() >= 4 && parts[0] == "#" && parts[1] == "components" {
+        let kind = parts[2];
+        let name = parts[3];
+        format!("[{name}]({base_components_rel}/{kind}/{name}.md)")
+    } else {
+        let name = reference.rsplit('/').next().unwrap_or(reference);
+        format!("[{name}]({base_components_rel}/schemas/{name}.md)")
     }
 }
 
@@ -803,7 +806,7 @@ mod tests {
         let parsed = parse_spec(spec_path.to_str().expect("path")).expect("parse");
         let _ = generate_routes(&parsed, &out_root, "demo").expect("generate");
         let rendered = std::fs::read_to_string(out_root.join("items/POST.md")).expect("read");
-        assert!(rendered.contains("[ItemCreate](../_types/ItemCreate.md)"));
+        assert!(rendered.contains("[ItemCreate](../_components/schemas/ItemCreate.md)"));
         assert!(!rendered.contains("apix peek"));
 
         let _ = std::fs::remove_file(spec_path);

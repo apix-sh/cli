@@ -1,7 +1,7 @@
 pub mod parser;
 pub mod resolver;
 pub mod routes;
-pub mod types;
+pub mod components;
 
 use crate::error::ApixError;
 use crate::output;
@@ -42,16 +42,16 @@ pub fn import(
     std::fs::create_dir_all(&root)?;
     write_metadata(&parsed, &root)?;
 
-    let type_count = types::generate_types(&parsed, &root, name)?;
+    let components_count = components::generate_components(&parsed, &root, name)?;
     let route_count = routes::generate_routes(&parsed, &root, name)?;
     if output_root.is_none() {
         crate::registry::rebuild_source_registry(".local")?;
     }
-    let total = type_count + route_count + 1;
+    let total = components_count + route_count + 1;
 
     output::eprintln_info(&format!(
-        "Import complete: {} types, {} routes, {} files written at {}",
-        type_count,
+        "Import complete: {} components, {} routes, {} files written at {}",
+        components_count,
         route_count,
         total,
         root.display()
@@ -115,7 +115,7 @@ mod tests {
         import(&fixture("petstore.json"), "petstore", None, false).expect("import");
         let version_root = home.join("vaults/.local/petstore/v1");
         assert!(version_root.join("_metadata.md").exists());
-        assert!(version_root.join("_types/Pet.md").exists());
+        assert!(version_root.join("_components/schemas/Pet.md").exists());
         assert!(version_root.join("pets/GET.md").exists());
         assert!(version_root.join("pets/{petId}/GET.md").exists());
 
@@ -158,7 +158,7 @@ mod tests {
 
         let version_root = out_root.join("petstore/v1");
         assert!(version_root.join("_metadata.md").exists());
-        assert!(version_root.join("_types/Pet.md").exists());
+        assert!(version_root.join("_components/schemas/Pet.md").exists());
         assert!(version_root.join("pets/GET.md").exists());
         assert!(!home.join("vaults/.local/registry.json").exists());
 
