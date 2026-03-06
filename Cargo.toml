@@ -33,6 +33,7 @@ regex = "1"
 url = "2"
 indexmap = "2"
 textwrap = "0.16"
+crossterm = "0.29.0"
 
 [profile.release]
 lto = true

@@ -183,7 +183,10 @@ fn auto_update_source_registry(source: &str) -> Result<(), ApixError> {
             return Ok(());
         }
     };
-    git::update_registry_metadata_only(source)?;
+    output::eprint_temp(&format!("Auto-updating `{source}` registry..."));
+    let res = git::update_registry_metadata_only(source);
+    output::clear_temp();
+    res?;
     ensure_registry_exists(source)?;
     write_last_updated(source, now_unix_seconds())?;
     Ok(())

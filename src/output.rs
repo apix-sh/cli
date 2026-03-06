@@ -60,6 +60,27 @@ pub fn eprintln_info(msg: &str) {
     }
 }
 
+pub fn eprint_temp(msg: &str) {
+    if options().quiet {
+        return;
+    }
+    let mut stderr = std::io::stderr();
+    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::terminal::Clear(termimad::crossterm::terminal::ClearType::CurrentLine));
+    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::cursor::MoveToColumn(0));
+    let _ = write!(stderr, "{}", msg.dimmed());
+    let _ = stderr.flush();
+}
+
+pub fn clear_temp() {
+    if options().quiet {
+        return;
+    }
+    let mut stderr = std::io::stderr();
+    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::terminal::Clear(termimad::crossterm::terminal::ClearType::CurrentLine));
+    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::cursor::MoveToColumn(0));
+    let _ = stderr.flush();
+}
+
 pub fn print_with_optional_pager(text: &str) {
     if should_use_pager(text) && try_page(text) {
         return;
