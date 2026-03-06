@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/apix-sh/cli/compare/v0.1.6...v0.1.7) - 2026-03-06
+
+### Added
+
+- add temporary, clearable stderr output using crossterm for registry update progress.
+
+### Other
+
+- Organize OpenAPI components into `_components/*` new component templates.
+- Add a blank line in the route markdown template for improved readability.
+- discard local changes before git pull and checkout operations to ensure a clean state.
+
 ## [0.1.6](https://github.com/apix-sh/cli/compare/v0.1.5...v0.1.6) - 2026-03-05
 
 ### Added
