@@ -255,7 +255,19 @@ fn restore_local_changes(root: &std::path::Path) -> Result<(), ApixError> {
         return Ok(());
     }
     let status = run_git_capture(["status", "--porcelain"], Some(root))?;
-    if !status.trim().is_empty() {
+    let has_changes = status.lines().any(|line| {
+        let t = line.trim();
+        if t.is_empty() {
+            return false;
+        }
+        // Ignore our own untracked metadata files
+        if t == "?? .auto-update.lock" || t == "?? .last-updated" {
+            return false;
+        }
+        true
+    });
+
+    if has_changes {
         output::eprintln_warn("Discarding local changes to vault before sync...");
         run_git(["reset", "--hard", "HEAD"], Some(root))?;
         run_git(["clean", "-fd"], Some(root))?;
