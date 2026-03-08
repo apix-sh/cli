@@ -45,7 +45,6 @@ _(None)_
 
 | Name | Required | Type | Description |
 | :--- | :------: | :--- | :---------- |
-
 {% for p in header_params -%}
 | `{{ p.name }}` | {{ p.required }} | {{ p.param_type }} | {{ p.description }} |
 {% endfor %}
@@ -56,7 +55,6 @@ _(None)_
 
 | Name | Required | Type | Description |
 | :--- | :------: | :--- | :---------- |
-
 {% for p in cookie_params -%}
 | `{{ p.name }}` | {{ p.required }} | {{ p.param_type }} | {{ p.description }} |
 {% endfor %}
@@ -86,7 +84,6 @@ _(None)_
 
 | Name | Required | Type | Description |
 | :--- | :------: | :--- | :---------- |
-
 {% for h in r.headers -%}
 | `{{ h.name }}` | {{ h.required }} | {{ h.param_type }} | {{ h.description }} |
 {% endfor %}
