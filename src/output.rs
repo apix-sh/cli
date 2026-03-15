@@ -65,8 +65,14 @@ pub fn eprint_temp(msg: &str) {
         return;
     }
     let mut stderr = std::io::stderr();
-    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::terminal::Clear(termimad::crossterm::terminal::ClearType::CurrentLine));
-    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::cursor::MoveToColumn(0));
+    let _ = termimad::crossterm::ExecutableCommand::execute(
+        &mut stderr,
+        termimad::crossterm::terminal::Clear(termimad::crossterm::terminal::ClearType::CurrentLine),
+    );
+    let _ = termimad::crossterm::ExecutableCommand::execute(
+        &mut stderr,
+        termimad::crossterm::cursor::MoveToColumn(0),
+    );
     let _ = write!(stderr, "{}", msg.dimmed());
     let _ = stderr.flush();
 }
@@ -76,8 +82,14 @@ pub fn clear_temp() {
         return;
     }
     let mut stderr = std::io::stderr();
-    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::terminal::Clear(termimad::crossterm::terminal::ClearType::CurrentLine));
-    let _ = termimad::crossterm::ExecutableCommand::execute(&mut stderr, termimad::crossterm::cursor::MoveToColumn(0));
+    let _ = termimad::crossterm::ExecutableCommand::execute(
+        &mut stderr,
+        termimad::crossterm::terminal::Clear(termimad::crossterm::terminal::ClearType::CurrentLine),
+    );
+    let _ = termimad::crossterm::ExecutableCommand::execute(
+        &mut stderr,
+        termimad::crossterm::cursor::MoveToColumn(0),
+    );
     let _ = stderr.flush();
 }
 
@@ -118,16 +130,22 @@ fn make_skin() -> termimad::MadSkin {
         // h2: bold green (AnsiValue(10)), NOT underlined
         s.headers[1].compound_style.set_fg(Color::AnsiValue(10));
         s.headers[1].compound_style.add_attr(Attribute::Bold);
-        s.headers[1].compound_style.remove_attr(Attribute::Underlined);
+        s.headers[1]
+            .compound_style
+            .remove_attr(Attribute::Underlined);
 
         // h3: green (AnsiValue(10)), NOT underlined
         s.headers[2].compound_style.set_fg(Color::AnsiValue(10));
-        s.headers[2].compound_style.remove_attr(Attribute::Underlined);
+        s.headers[2]
+            .compound_style
+            .remove_attr(Attribute::Underlined);
 
         // h4: bold white (AnsiValue(15)), NOT underlined
         s.headers[3].compound_style.set_fg(Color::AnsiValue(15));
         s.headers[3].compound_style.add_attr(Attribute::Bold);
-        s.headers[3].compound_style.remove_attr(Attribute::Underlined);
+        s.headers[3]
+            .compound_style
+            .remove_attr(Attribute::Underlined);
 
         s
     };
@@ -152,7 +170,7 @@ fn render_markdown(markdown: &str) -> String {
     let mut out = Vec::new();
     let skin = make_skin();
     let write_res = skin.write_text_on(&mut out, markdown);
-    
+
     if write_res.is_err() {
         return markdown.to_string();
     }
@@ -216,7 +234,7 @@ pub fn print_indented_dimmed(text: &str, indent_size: usize) {
     let options = textwrap::Options::new(width.saturating_sub(indent_size))
         .initial_indent(&indent)
         .subsequent_indent(&indent);
-    
+
     let wrapped = textwrap::fill(text, options);
     if colors_disabled() {
         println!("{wrapped}");
@@ -232,7 +250,7 @@ pub fn print_indented_dimmed_tags(text: &str, indent_size: usize) {
     let options = textwrap::Options::new(width.saturating_sub(indent_size))
         .initial_indent(&indent)
         .subsequent_indent(&indent);
-    
+
     let wrapped = textwrap::fill(text, options);
     if colors_disabled() {
         println!("{wrapped}");
@@ -278,21 +296,23 @@ fn try_page(text: &str) -> bool {
     };
 
     if let Some(stdin) = child.stdin.as_mut()
-        && stdin.write_all(text.as_bytes()).is_err() {
-            let _ = child.kill();
-            return false;
-        }
+        && stdin.write_all(text.as_bytes()).is_err()
+    {
+        let _ = child.kill();
+        return false;
+    }
     child.wait().map(|s| s.success()).unwrap_or(false)
 }
 
 fn configured_pager() -> String {
     if let Ok(cfg) = crate::config::Config::load()
-        && let Some(p) = cfg.pager {
-            let trimmed = p.trim();
-            if !trimmed.is_empty() {
-                return trimmed.to_string();
-            }
+        && let Some(p) = cfg.pager
+    {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
         }
+    }
     if let Ok(pager) = std::env::var("PAGER") {
         let trimmed = pager.trim();
         if !trimmed.is_empty() {

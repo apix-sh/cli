@@ -19,17 +19,18 @@ pub fn show(route: &str, source_override: Option<&str>) -> Result<(), ApixError>
         Err(err) => return Err(err),
     };
     let content = std::fs::read_to_string(resolved.file_path)?;
-    
-    let rendered_content = if let Ok((fm, body)) = frontmatter::extract_frontmatter::<serde_yaml::Value>(&content) {
-        let table = render_frontmatter_table(&fm);
-        if table.is_empty() {
-            body.to_string()
+
+    let rendered_content =
+        if let Ok((fm, body)) = frontmatter::extract_frontmatter::<serde_yaml::Value>(&content) {
+            let table = render_frontmatter_table(&fm);
+            if table.is_empty() {
+                body.to_string()
+            } else {
+                format!("{}\n{}", table, body)
+            }
         } else {
-            format!("{}\n{}", table, body)
-        }
-    } else {
-        content.clone() // fallback if no frontmatter
-    };
+            content.clone() // fallback if no frontmatter
+        };
 
     let rendered = if resolved.source != ".local" {
         format!("> Source: `{}`\n\n{}", resolved.source, rendered_content)
@@ -242,4 +243,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 }
-

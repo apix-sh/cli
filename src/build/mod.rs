@@ -1,7 +1,7 @@
+pub mod components;
 pub mod parser;
 pub mod resolver;
 pub mod routes;
-pub mod components;
 pub mod schema_helpers;
 
 use crate::error::ApixError;
@@ -9,6 +9,14 @@ use crate::output;
 use askama::Template;
 use parser::ParsedSpec;
 use std::path::{Path, PathBuf};
+
+pub(crate) fn sanitize_markdown_table_cell(value: &str) -> String {
+    value
+        .replace('|', r"\|")
+        .replace("\r\n", "<br/>")
+        .replace('\n', "<br/>")
+        .replace('\r', "<br/>")
+}
 
 #[derive(Template)]
 #[template(path = "metadata.md")]
@@ -217,8 +225,7 @@ mod tests {
     #[test]
     #[serial]
     fn import_auth_extraction_generates_correct_frontmatter() {
-        let out_root =
-            std::env::temp_dir().join(format!("apix-it-auth-{}", std::process::id()));
+        let out_root = std::env::temp_dir().join(format!("apix-it-auth-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out_root);
 
         import(
@@ -232,26 +239,42 @@ mod tests {
         let version_root = out_root.join("petauth/v1");
 
         // _metadata.md should have global auth = "bearer"
-        let metadata = std::fs::read_to_string(version_root.join("_metadata.md")).expect("read metadata");
-        assert!(metadata.contains("auth: \"bearer\""), "metadata should contain bearer auth, got:\n{metadata}");
+        let metadata =
+            std::fs::read_to_string(version_root.join("_metadata.md")).expect("read metadata");
+        assert!(
+            metadata.contains("auth: \"bearer\""),
+            "metadata should contain bearer auth, got:\n{metadata}"
+        );
 
         // /pets GET inherits global auth if oas3 doesn't populate it, it might still say auth: "none"
         // if it differs from the global bearer. In oas3, an inherited route might look the same as an
         // explicitly empty one. We'll accept "none" here for now.
-        let pets_get = std::fs::read_to_string(version_root.join("pets/GET.md")).expect("read pets GET");
-        assert!(pets_get.contains(r#"auth: "none""#), "inherited route might now explicitly say none in oas3, got:\n{pets_get}");
+        let pets_get =
+            std::fs::read_to_string(version_root.join("pets/GET.md")).expect("read pets GET");
+        assert!(
+            pets_get.contains(r#"auth: "none""#),
+            "inherited route might now explicitly say none in oas3, got:\n{pets_get}"
+        );
 
         // /pets/{petId} GET has security override → auth: "apiKey (header: X-API-KEY)"
-        let pet_get = std::fs::read_to_string(version_root.join("pets/{petId}/GET.md")).expect("read pet GET");
-        assert!(pet_get.contains(r#"auth: "apiKey (header: X-API-KEY)""#), "overridden route should have apiKey auth, got:\n{pet_get}");
+        let pet_get = std::fs::read_to_string(version_root.join("pets/{petId}/GET.md"))
+            .expect("read pet GET");
+        assert!(
+            pet_get.contains(r#"auth: "apiKey (header: X-API-KEY)""#),
+            "overridden route should have apiKey auth, got:\n{pet_get}"
+        );
 
         // /health GET has security: [] → auth: "none"
-        let health_get = std::fs::read_to_string(version_root.join("health/GET.md")).expect("read health GET");
-        assert!(health_get.contains(r#"auth: "none""#), "no-auth route should have auth: none, got:\n{health_get}");
+        let health_get =
+            std::fs::read_to_string(version_root.join("health/GET.md")).expect("read health GET");
+        assert!(
+            health_get.contains(r#"auth: "none""#),
+            "no-auth route should have auth: none, got:\n{health_get}"
+        );
 
         let _ = std::fs::remove_dir_all(&out_root);
     }
-    
+
     #[test]
     #[serial]
     fn import_extracts_tags_and_indexes_them() {

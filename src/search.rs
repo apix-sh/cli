@@ -56,9 +56,12 @@ fn search_markdown_files(
             }
 
             let ln = line_num;
-            results
-                .borrow_mut()
-                .push(format!("{}:{}: {}", crate::output::fmt_path(&rel), crate::output::fmt_line_number(&ln.to_string()), line.trim_end()));
+            results.borrow_mut().push(format!(
+                "{}:{}: {}",
+                crate::output::fmt_path(&rel),
+                crate::output::fmt_line_number(&ln.to_string()),
+                line.trim_end()
+            ));
             Ok(true)
         });
 

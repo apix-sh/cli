@@ -44,20 +44,23 @@ mod tests {
     #[test]
     fn test_primary_type() {
         let mut schema = ObjectSchema::default();
-        
+
         // Single type
         schema.schema_type = Some(SchemaTypeSet::Single(SchemaType::String));
         assert_eq!(primary_type(&schema), Some(SchemaType::String));
-        
+
         // Multiple types including null
-        schema.schema_type = Some(SchemaTypeSet::Multiple(vec![SchemaType::String, SchemaType::Null]));
+        schema.schema_type = Some(SchemaTypeSet::Multiple(vec![
+            SchemaType::String,
+            SchemaType::Null,
+        ]));
         assert_eq!(primary_type(&schema), Some(SchemaType::String));
         assert!(is_nullable(&schema));
-        
+
         // Just null
         schema.schema_type = Some(SchemaTypeSet::Single(SchemaType::Null));
         assert_eq!(primary_type(&schema), None);
-        
+
         // None
         schema.schema_type = None;
         assert_eq!(primary_type(&schema), None);

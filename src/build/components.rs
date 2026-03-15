@@ -88,8 +88,15 @@ pub fn generate_components(
     std::fs::create_dir_all(&params_dir)?;
     for (name, param_ref) in &components.parameters {
         match param_ref {
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                let tpl = GenericTemplate { kind: "Parameter Reference", name, content: format!("Ref: {reference}") };
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
+                let tpl = GenericTemplate {
+                    kind: "Parameter Reference",
+                    name,
+                    content: format!("Ref: {reference}"),
+                };
                 std::fs::write(params_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
             ObjectOrReference::Object(param) => {
@@ -101,11 +108,16 @@ pub fn generate_components(
                 };
                 let ptype = if let Some(schema_ref) = &param.schema {
                     match schema_ref {
-                        ObjectOrReference::Ref { ref_path: reference, .. } => {
+                        ObjectOrReference::Ref {
+                            ref_path: reference,
+                            ..
+                        } => {
                             let rname = reference.rsplit('/').next().unwrap_or(reference);
                             format!("[{rname}](../schemas/{rname}.md)")
                         }
-                        ObjectOrReference::Object(inner) => schema_type_to_string(inner, "../schemas"),
+                        ObjectOrReference::Object(inner) => {
+                            schema_type_to_string(inner, "../schemas")
+                        }
                     }
                 } else {
                     "content".to_string()
@@ -129,12 +141,28 @@ pub fn generate_components(
     for (name, resp_ref) in &components.responses {
         match resp_ref {
             ObjectOrReference::Object(resp) => {
-                let tpl = ResponseTemplate { name, description: resp.description.as_deref().unwrap_or_default() };
-                std::fs::write(responses_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
+                let tpl = ResponseTemplate {
+                    name,
+                    description: resp.description.as_deref().unwrap_or_default(),
+                };
+                std::fs::write(
+                    responses_dir.join(format!("{name}.md")),
+                    tpl.render().unwrap(),
+                )?;
             }
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                let tpl = GenericTemplate { kind: "Response Reference", name, content: format!("Ref: {reference}") };
-                std::fs::write(responses_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
+                let tpl = GenericTemplate {
+                    kind: "Response Reference",
+                    name,
+                    content: format!("Ref: {reference}"),
+                };
+                std::fs::write(
+                    responses_dir.join(format!("{name}.md")),
+                    tpl.render().unwrap(),
+                )?;
             }
         }
         count += 1;
@@ -145,13 +173,30 @@ pub fn generate_components(
     std::fs::create_dir_all(&headers_dir)?;
     for (name, header_ref) in &components.headers {
         match header_ref {
-             ObjectOrReference::Object(header) => {
-                let tpl = GenericTemplate { kind: "Header", name, content: header.description.clone().unwrap_or_default() };
-                std::fs::write(headers_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
+            ObjectOrReference::Object(header) => {
+                let tpl = GenericTemplate {
+                    kind: "Header",
+                    name,
+                    content: header.description.clone().unwrap_or_default(),
+                };
+                std::fs::write(
+                    headers_dir.join(format!("{name}.md")),
+                    tpl.render().unwrap(),
+                )?;
             }
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                let tpl = GenericTemplate { kind: "Header Reference", name, content: format!("Ref: {reference}") };
-                std::fs::write(headers_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
+                let tpl = GenericTemplate {
+                    kind: "Header Reference",
+                    name,
+                    content: format!("Ref: {reference}"),
+                };
+                std::fs::write(
+                    headers_dir.join(format!("{name}.md")),
+                    tpl.render().unwrap(),
+                )?;
             }
         }
         count += 1;
@@ -163,11 +208,25 @@ pub fn generate_components(
     for (name, body_ref) in &components.request_bodies {
         match body_ref {
             ObjectOrReference::Object(body) => {
-                let tpl = GenericTemplate { kind: "Request Body", name, content: format!("Description: {}", body.description.as_deref().unwrap_or_default()) };
+                let tpl = GenericTemplate {
+                    kind: "Request Body",
+                    name,
+                    content: format!(
+                        "Description: {}",
+                        body.description.as_deref().unwrap_or_default()
+                    ),
+                };
                 std::fs::write(bodies_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                let tpl = GenericTemplate { kind: "Request Body Reference", name, content: format!("Ref: {reference}") };
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
+                let tpl = GenericTemplate {
+                    kind: "Request Body Reference",
+                    name,
+                    content: format!("Ref: {reference}"),
+                };
                 std::fs::write(bodies_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
         }
@@ -183,7 +242,10 @@ fn schema_details(
     parsed: &ParsedSpec,
 ) -> (String, String, Vec<PropertyRow>) {
     match schema_ref {
-        ObjectOrReference::Ref { ref_path: reference, .. } => (
+        ObjectOrReference::Ref {
+            ref_path: reference,
+            ..
+        } => (
             "reference".to_string(),
             format!("Reference to `{reference}`"),
             Vec::new(),
@@ -203,22 +265,26 @@ fn schema_details(
     }
 }
 
-fn collect_properties(schema: &ObjectSchema, namespace: &str, parsed: &ParsedSpec) -> Vec<PropertyRow> {
+fn collect_properties(
+    schema: &ObjectSchema,
+    namespace: &str,
+    parsed: &ParsedSpec,
+) -> Vec<PropertyRow> {
     let mut rows = Vec::new();
     let required: HashSet<&str> = schema.required.iter().map(String::as_str).collect();
-    
+
     // Properties from this schema
     for (prop_name, prop_schema) in &schema.properties {
         let (ptype, desc) = prop_type_and_description(prop_schema, namespace, parsed);
         rows.push(PropertyRow {
-            name: prop_name.to_string(),
+            name: super::sanitize_markdown_table_cell(prop_name),
             required: if required.contains(prop_name.as_str()) {
                 "Yes".to_string()
             } else {
                 "No".to_string()
             },
-            prop_type: ptype,
-            description: desc,
+            prop_type: super::sanitize_markdown_table_cell(&ptype),
+            description: super::sanitize_markdown_table_cell(&desc),
         });
     }
 
@@ -228,21 +294,24 @@ fn collect_properties(schema: &ObjectSchema, namespace: &str, parsed: &ParsedSpe
             ObjectOrReference::Object(inner) => {
                 rows.extend(collect_properties(inner, namespace, parsed));
             }
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
                 let mut seen = HashSet::new();
-                if let Ok(resolved) = crate::build::resolver::resolve_schema(
-                    reference,
-                    &parsed.spec,
-                    &mut seen,
-                ) {
+                if let Ok(resolved) =
+                    crate::build::resolver::resolve_schema(reference, &parsed.spec, &mut seen)
+                {
                     rows.extend(collect_properties(resolved, namespace, parsed));
                 } else {
                     let name = reference.rsplit('/').next().unwrap_or(reference);
                     rows.push(PropertyRow {
-                        name: format!("(ref: {name})"),
+                        name: super::sanitize_markdown_table_cell(&format!("(ref: {name})")),
                         required: "Unknown".to_string(),
-                        prop_type: format!("[{name}]({name}.md)"),
-                        description: "Unresolved reference".to_string(),
+                        prop_type: super::sanitize_markdown_table_cell(&format!(
+                            "[{name}]({name}.md)"
+                        )),
+                        description: super::sanitize_markdown_table_cell("Unresolved reference"),
                     });
                 }
             }
@@ -257,7 +326,10 @@ fn prop_type_and_description(
     _parsed: &ParsedSpec,
 ) -> (String, String) {
     match prop_schema {
-        ObjectOrReference::Ref { ref_path: reference, .. } => {
+        ObjectOrReference::Ref {
+            ref_path: reference,
+            ..
+        } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
             (format!("[{name}]({name}.md)"), String::new())
         }
@@ -276,7 +348,9 @@ fn prop_type_and_description(
 }
 
 fn string_enum_values(schema: &ObjectSchema) -> Option<Vec<String>> {
-    let vals: Vec<String> = schema.enum_values.iter()
+    let vals: Vec<String> = schema
+        .enum_values
+        .iter()
         .filter_map(|v| v.as_str().map(|s| s.to_string()))
         .collect();
     if vals.is_empty() { None } else { Some(vals) }
@@ -290,7 +364,10 @@ fn variant_links(schema: &ObjectSchema, _namespace: &str, _parsed: &ParsedSpec) 
     let refs: Vec<String> = variants
         .iter()
         .map(|item| match item {
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
                 let name = reference.rsplit('/').next().unwrap_or(reference);
                 format!("- [{name}]({name}.md)")
             }
@@ -307,16 +384,25 @@ fn variant_links(schema: &ObjectSchema, _namespace: &str, _parsed: &ParsedSpec) 
 
 pub(crate) fn schema_type_to_string(schema: &ObjectSchema, schema_dir_rel: &str) -> String {
     // Check composition first
-    if !schema.one_of.is_empty() { return format!("oneOf({})", schema.one_of.len()); }
-    if !schema.any_of.is_empty() { return format!("anyOf({})", schema.any_of.len()); }
-    if !schema.all_of.is_empty() { return format!("allOf({})", schema.all_of.len()); }
+    if !schema.one_of.is_empty() {
+        return format!("oneOf({})", schema.one_of.len());
+    }
+    if !schema.any_of.is_empty() {
+        return format!("anyOf({})", schema.any_of.len());
+    }
+    if !schema.all_of.is_empty() {
+        return format!("allOf({})", schema.all_of.len());
+    }
 
     // Check array with items
     if is_type(schema, SchemaType::Array) {
         if let Some(items) = &schema.items {
             return match items.as_ref() {
                 oas3::spec::Schema::Object(box_ref) => match box_ref.as_ref() {
-                    ObjectOrReference::Ref { ref_path: reference, .. } => {
+                    ObjectOrReference::Ref {
+                        ref_path: reference,
+                        ..
+                    } => {
                         let name = reference.rsplit('/').next().unwrap_or(reference);
                         format!("array<[{name}]({schema_dir_rel}/{name}.md)>")
                     }
@@ -339,7 +425,8 @@ pub(crate) fn schema_type_to_string(schema: &ObjectSchema, schema_dir_rel: &str)
         Some(SchemaType::Boolean) => "boolean",
         Some(SchemaType::Null) => "null",
         None => "any",
-    }.to_string()
+    }
+    .to_string()
 }
 
 #[allow(dead_code)]
@@ -372,7 +459,8 @@ mod tests {
 }"#;
         let spec_path =
             std::env::temp_dir().join(format!("apix-components-{}.json", std::process::id()));
-        let out_root = std::env::temp_dir().join(format!("apix-components-out-{}", std::process::id()));
+        let out_root =
+            std::env::temp_dir().join(format!("apix-components-out-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out_root);
         std::fs::write(&spec_path, spec).expect("write");
 
@@ -380,9 +468,49 @@ mod tests {
         let n = generate_components(&parsed, &out_root, "demo").expect("generate");
         assert_eq!(n, 1);
 
-        let rendered = std::fs::read_to_string(out_root.join("_components/schemas/Thing.md")).expect("read");
+        let rendered =
+            std::fs::read_to_string(out_root.join("_components/schemas/Thing.md")).expect("read");
         assert!(rendered.contains("# Thing"));
         assert!(rendered.contains("Allowed values: a, b"));
+
+        let _ = std::fs::remove_file(spec_path);
+        let _ = std::fs::remove_dir_all(out_root);
+    }
+
+    #[test]
+    fn escapes_multiline_schema_property_description_in_table_cell() {
+        let spec = r#"{
+  "openapi": "3.0.0",
+  "info": { "title": "T", "version": "v1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Thing": {
+        "type": "object",
+        "properties": {
+          "notes": { "type": "string", "description": "line one\nline two" }
+        }
+      }
+    }
+  }
+}"#;
+        let spec_path = std::env::temp_dir().join(format!(
+            "apix-components-multiline-{}.json",
+            std::process::id()
+        ));
+        let out_root = std::env::temp_dir().join(format!(
+            "apix-components-multiline-out-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&out_root);
+        std::fs::write(&spec_path, spec).expect("write");
+
+        let parsed = parse_spec(spec_path.to_str().expect("path")).expect("parse");
+        let _ = generate_components(&parsed, &out_root, "demo").expect("generate");
+
+        let rendered =
+            std::fs::read_to_string(out_root.join("_components/schemas/Thing.md")).expect("read");
+        assert!(rendered.contains("line one<br/>line two"));
 
         let _ = std::fs::remove_file(spec_path);
         let _ = std::fs::remove_dir_all(out_root);

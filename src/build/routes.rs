@@ -1,7 +1,8 @@
 use crate::error::ApixError;
 use askama::Template;
 use oas3::spec::{
-    MediaType, ObjectOrReference, ObjectSchema, Operation, Parameter, ParameterIn, PathItem, Response,
+    MediaType, ObjectOrReference, ObjectSchema, Operation, Parameter, ParameterIn, PathItem,
+    Response,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -57,13 +58,13 @@ pub fn generate_routes(
         // but wait, oas3::Spec.paths is Option<BTreeMap<String, PathItem>>
         // and PathItem DOES NOT have a ReferenceOr variant in that map.
         // It has a Reference field if it's a ref.
-        
+
         // If it's a reference, we need to resolve it.
         let resolved_path_item = if let Some(reference) = &path_item.reference {
-             let mut seen = std::collections::HashSet::new();
-             crate::build::resolver::resolve_path_item(reference, &parsed.spec, &mut seen)?
+            let mut seen = std::collections::HashSet::new();
+            crate::build::resolver::resolve_path_item(reference, &parsed.spec, &mut seen)?
         } else {
-             path_item
+            path_item
         };
 
         emit_operation(
@@ -203,7 +204,6 @@ fn emit_operation(
         Some(op_auth)
     };
 
-
     let tpl = RouteTemplate {
         method,
         url: &url,
@@ -260,12 +260,15 @@ fn collect_parameters(
 
     for param_ref in all_params {
         match param_ref {
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => {
                 let link = ref_to_link(reference, base_components_rel);
                 query_rows.push(ParamRow {
-                    name: "Reference".to_string(),
+                    name: super::sanitize_markdown_table_cell("Reference"),
                     required: "N/A".to_string(),
-                    param_type: link,
+                    param_type: super::sanitize_markdown_table_cell(&link),
                     description: String::new(),
                 });
             }
@@ -284,18 +287,17 @@ fn collect_parameters(
     (path_rows, query_rows, header_rows, cookie_rows)
 }
 
-fn row_from_parameter(
-    param: &Parameter,
-    base_components_rel: &str,
-) -> ParamRow {
+fn row_from_parameter(param: &Parameter, base_components_rel: &str) -> ParamRow {
     let ty = if let Some(schema_ref) = &param.schema {
         match schema_ref {
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                ref_to_link(reference, base_components_rel)
-            }
-            ObjectOrReference::Object(schema) => {
-                super::components::schema_type_to_string(schema, &format!("{}/schemas", base_components_rel))
-            }
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => ref_to_link(reference, base_components_rel),
+            ObjectOrReference::Object(schema) => super::components::schema_type_to_string(
+                schema,
+                &format!("{}/schemas", base_components_rel),
+            ),
         }
     } else if let Some(content) = &param.content {
         if let Some((ctype, _media_type)) = content.iter().next() {
@@ -315,9 +317,10 @@ fn row_from_parameter(
         hints.push(format!("explode={explode}"));
     }
     if let Some(allow) = param.allow_reserved
-        && allow {
-            hints.push("allowReserved=true".to_string());
-        }
+        && allow
+    {
+        hints.push("allowReserved=true".to_string());
+    }
 
     let mut desc = param.description.clone().unwrap_or_default();
     if !hints.is_empty() {
@@ -330,10 +333,15 @@ fn row_from_parameter(
     }
 
     ParamRow {
-        name: param.name.clone(),
-        required: if param.required.unwrap_or(false) { "Yes" } else { "No" }.to_string(),
-        param_type: ty,
-        description: desc,
+        name: super::sanitize_markdown_table_cell(&param.name),
+        required: if param.required.unwrap_or(false) {
+            "Yes"
+        } else {
+            "No"
+        }
+        .to_string(),
+        param_type: super::sanitize_markdown_table_cell(&ty),
+        description: super::sanitize_markdown_table_cell(&desc),
     }
 }
 
@@ -345,12 +353,18 @@ fn request_content_type(op: &Operation) -> Option<String> {
     }
 }
 
-fn request_body_text(op: &Operation, namespace: &str, version: &str, base_components_rel: &str) -> String {
+fn request_body_text(
+    op: &Operation,
+    namespace: &str,
+    version: &str,
+    base_components_rel: &str,
+) -> String {
     match &op.request_body {
         None => String::new(),
-        Some(ObjectOrReference::Ref { ref_path: reference, .. }) => {
-            ref_to_link(reference, base_components_rel)
-        }
+        Some(ObjectOrReference::Ref {
+            ref_path: reference,
+            ..
+        }) => ref_to_link(reference, base_components_rel),
         Some(ObjectOrReference::Object(item)) => {
             if item.content.is_empty() {
                 return "Request body present but no media type entries".to_string();
@@ -391,10 +405,16 @@ fn inline_body_doc(
 
     let mut out = String::new();
     out.push_str(&format!("{title_prefix} (`{ctype}`)\n"));
-    
+
     match schema_ref {
-        ObjectOrReference::Ref { ref_path: reference, .. } => {
-            out.push_str(&format!("{}\n", ref_to_link(reference, base_components_rel)));
+        ObjectOrReference::Ref {
+            ref_path: reference,
+            ..
+        } => {
+            out.push_str(&format!(
+                "{}\n",
+                ref_to_link(reference, base_components_rel)
+            ));
         }
         ObjectOrReference::Object(schema) => {
             let rows = schema_property_rows(schema, base_components_rel);
@@ -411,7 +431,10 @@ fn inline_body_doc(
                     ));
                 }
             } else {
-                let kind_str = super::components::schema_type_to_string(schema, &format!("{}/schemas", base_components_rel));
+                let kind_str = super::components::schema_type_to_string(
+                    schema,
+                    &format!("{}/schemas", base_components_rel),
+                );
                 if kind_str.starts_with("array<") {
                     out.push_str(&format!("{kind_str}\n"));
                 } else {
@@ -457,19 +480,23 @@ fn schema_property_rows(
 
     for (name, prop_ref) in &schema.properties {
         let (ty, desc) = match prop_ref {
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                (ref_to_link(reference, base_components_rel), String::new())
-            }
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => (ref_to_link(reference, base_components_rel), String::new()),
             ObjectOrReference::Object(inner) => (
-                super::components::schema_type_to_string(inner, &format!("{}/schemas", base_components_rel)),
+                super::components::schema_type_to_string(
+                    inner,
+                    &format!("{}/schemas", base_components_rel),
+                ),
                 inner.description.clone().unwrap_or_default(),
             ),
         };
         rows.push((
-            name.clone(),
+            super::sanitize_markdown_table_cell(name),
             required.contains(name.as_str()),
-            ty,
-            desc,
+            super::sanitize_markdown_table_cell(&ty),
+            super::sanitize_markdown_table_cell(&desc),
         ));
     }
     rows
@@ -529,7 +556,7 @@ fn response_rows(
     let mut rows = Vec::new();
     let empty_map = BTreeMap::new();
     let responses = op.responses.as_ref().unwrap_or(&empty_map);
-    
+
     for (status, response_ref) in responses {
         let (desc, headers, content) =
             extract_response_details(response_ref, namespace, version, base_components_rel);
@@ -550,18 +577,29 @@ fn extract_response_details(
     base_components_rel: &str,
 ) -> (String, Vec<ParamRow>, String) {
     match response_ref {
-        ObjectOrReference::Ref { ref_path: reference, .. } => {
-            (format!("Reference: {}", ref_to_link(reference, base_components_rel)), Vec::new(), String::new())
-        }
+        ObjectOrReference::Ref {
+            ref_path: reference,
+            ..
+        } => (
+            format!("Reference: {}", ref_to_link(reference, base_components_rel)),
+            Vec::new(),
+            String::new(),
+        ),
         ObjectOrReference::Object(item) => {
             let mut headers = Vec::new();
             for (name, header_ref) in &item.headers {
                 match header_ref {
-                    ObjectOrReference::Ref { ref_path: reference, .. } => {
+                    ObjectOrReference::Ref {
+                        ref_path: reference,
+                        ..
+                    } => {
                         headers.push(ParamRow {
-                            name: format!("{name} (ref)"),
+                            name: super::sanitize_markdown_table_cell(&format!("{name} (ref)")),
                             required: "Unknown".to_string(),
-                            param_type: ref_to_link(reference, base_components_rel),
+                            param_type: super::sanitize_markdown_table_cell(&ref_to_link(
+                                reference,
+                                base_components_rel,
+                            )),
                             description: String::new(),
                         });
                     }
@@ -596,15 +634,17 @@ fn extract_response_details(
 fn row_from_header(name: &str, header: &oas3::spec::Header, base_components_rel: &str) -> ParamRow {
     let ty = if let Some(schema_ref) = &header.schema {
         match schema_ref {
-            ObjectOrReference::Ref { ref_path: reference, .. } => {
-                ref_to_link(reference, base_components_rel)
-            }
-            ObjectOrReference::Object(schema) => {
-                super::components::schema_type_to_string(schema, &format!("{}/schemas", base_components_rel))
-            }
+            ObjectOrReference::Ref {
+                ref_path: reference,
+                ..
+            } => ref_to_link(reference, base_components_rel),
+            ObjectOrReference::Object(schema) => super::components::schema_type_to_string(
+                schema,
+                &format!("{}/schemas", base_components_rel),
+            ),
         }
     } else if let Some(content) = &header.content {
-         if let Some((ctype, _)) = content.iter().next() {
+        if let Some((ctype, _)) = content.iter().next() {
             format!("content `{ctype}`")
         } else {
             "content".to_string()
@@ -614,13 +654,19 @@ fn row_from_header(name: &str, header: &oas3::spec::Header, base_components_rel:
     };
 
     ParamRow {
-        name: name.to_string(),
-        required: if header.required.unwrap_or(false) { "Yes" } else { "No" }.to_string(),
-        param_type: ty,
-        description: header.description.clone().unwrap_or_default(),
+        name: super::sanitize_markdown_table_cell(name),
+        required: if header.required.unwrap_or(false) {
+            "Yes"
+        } else {
+            "No"
+        }
+        .to_string(),
+        param_type: super::sanitize_markdown_table_cell(&ty),
+        description: super::sanitize_markdown_table_cell(
+            header.description.as_deref().unwrap_or_default(),
+        ),
     }
 }
-
 
 fn ref_to_link(reference: &str, base_components_rel: &str) -> String {
     let parts: Vec<&str> = reference.split('/').collect();
@@ -804,6 +850,72 @@ mod tests {
         // However, the URL inside the rendered markdown differs slightly since base_path has changed.
         assert!(link_rendered.contains("Target Endpoint"));
         assert!(link_rendered.contains("/link"));
+
+        let _ = std::fs::remove_file(spec_path);
+        let _ = std::fs::remove_dir_all(out_root);
+    }
+
+    #[test]
+    fn escapes_multiline_descriptions_in_route_tables() {
+        let spec = r#"{
+  "openapi": "3.0.0",
+  "info": { "title": "T", "version": "v1" },
+  "servers": [{ "url": "https://api.example.com" }],
+  "paths": {
+    "/items": {
+      "post": {
+        "summary": "Create",
+        "parameters": [
+          {
+            "name": "verbose",
+            "in": "query",
+            "required": false,
+            "description": "first line\nsecond line",
+            "schema": { "type": "boolean" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": { "type": "string", "description": "body line one\nbody line two" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "headers": {
+              "X-Trace": {
+                "description": "header one\nheader two",
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}"#;
+        let spec_path =
+            std::env::temp_dir().join(format!("apix-routes-multiline-{}.json", std::process::id()));
+        let out_root =
+            std::env::temp_dir().join(format!("apix-routes-multiline-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out_root);
+        std::fs::write(&spec_path, spec).expect("write");
+
+        let parsed = parse_spec(spec_path.to_str().expect("path")).expect("parse");
+        let _ = generate_routes(&parsed, &out_root, "demo").expect("generate");
+
+        let rendered = std::fs::read_to_string(out_root.join("items/POST.md")).expect("read");
+        assert!(rendered.contains("first line<br/>second line"));
+        assert!(rendered.contains("body line one<br/>body line two"));
+        assert!(rendered.contains("header one<br/>header two"));
 
         let _ = std::fs::remove_file(spec_path);
         let _ = std::fs::remove_dir_all(out_root);

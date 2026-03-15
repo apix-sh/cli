@@ -18,8 +18,9 @@ pub fn resolve_path_item<'a>(
         let path_key = reference.trim_start_matches("#/paths/");
         let unescaped = path_key.replace("~1", "/").replace("~0", "~");
         if let Some(paths) = &spec.paths
-            && let Some(item) = paths.get(&unescaped) {
-                return Ok(item);
+            && let Some(item) = paths.get(&unescaped)
+        {
+            return Ok(item);
         }
     }
 
@@ -44,14 +45,17 @@ pub fn resolve_schema<'a>(
     if reference.starts_with("#/components/schemas/") {
         let name = reference.trim_start_matches("#/components/schemas/");
         if let Some(components) = &spec.components
-            && let Some(ref_or_item) = components.schemas.get(name) {
-                match ref_or_item {
-                    ObjectOrReference::Object(item) => return Ok(item),
-                    ObjectOrReference::Ref { ref_path: next_ref, .. } => {
-                        return resolve_schema(next_ref, spec, seen);
-                    }
+            && let Some(ref_or_item) = components.schemas.get(name)
+        {
+            match ref_or_item {
+                ObjectOrReference::Object(item) => return Ok(item),
+                ObjectOrReference::Ref {
+                    ref_path: next_ref, ..
+                } => {
+                    return resolve_schema(next_ref, spec, seen);
                 }
             }
+        }
     }
 
     Err(ApixError::Parse(format!(
@@ -97,16 +101,22 @@ mod tests {
     #[test]
     fn resolve_schema_circular() {
         let mut schemas = BTreeMap::new();
-        schemas.insert("schema_a".to_string(), ObjectOrReference::Ref { 
-            ref_path: "#/components/schemas/schema_b".to_string(),
-            summary: None,
-            description: None,
-        });
-        schemas.insert("schema_b".to_string(), ObjectOrReference::Ref { 
-            ref_path: "#/components/schemas/schema_a".to_string(),
-            summary: None,
-            description: None,
-        });
+        schemas.insert(
+            "schema_a".to_string(),
+            ObjectOrReference::Ref {
+                ref_path: "#/components/schemas/schema_b".to_string(),
+                summary: None,
+                description: None,
+            },
+        );
+        schemas.insert(
+            "schema_b".to_string(),
+            ObjectOrReference::Ref {
+                ref_path: "#/components/schemas/schema_a".to_string(),
+                summary: None,
+                description: None,
+            },
+        );
 
         let spec = OpenAPI {
             openapi: "3.0.0".to_string(),
@@ -167,5 +177,3 @@ mod tests {
         assert!(matches!(err, ApixError::Parse(msg) if msg.contains("Could not resolve")));
     }
 }
-
-

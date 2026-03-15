@@ -94,13 +94,27 @@ pub fn ls(namespace: Option<&str>, source_override: Option<&str>) -> Result<(), 
             print_namespace_detail(&records);
             Ok(())
         }
-        LsTarget::NamespaceVersion { namespace, version, path_prefix } => {
+        LsTarget::NamespaceVersion {
+            namespace,
+            version,
+            path_prefix,
+        } => {
             if output::options().json {
-                let detail = namespace_version_detail(&namespace, &version, path_prefix.as_deref(), source_override)?;
+                let detail = namespace_version_detail(
+                    &namespace,
+                    &version,
+                    path_prefix.as_deref(),
+                    source_override,
+                )?;
                 print_json(&detail)?;
                 return Ok(());
             }
-            let out = render_namespace_version_detail(&namespace, &version, path_prefix.as_deref(), source_override)?;
+            let out = render_namespace_version_detail(
+                &namespace,
+                &version,
+                path_prefix.as_deref(),
+                source_override,
+            )?;
             output::print_with_optional_pager(&out);
             Ok(())
         }
@@ -151,13 +165,19 @@ fn render_namespace_version_detail(
     let mut out = String::new();
     out.push_str(&format!(
         "{}/{} (source: {})\n\n",
-        output::fmt_namespace(namespace), version, output::fmt_source(&detail.source)
+        output::fmt_namespace(namespace),
+        version,
+        output::fmt_source(&detail.source)
     ));
 
     for group in detail.routes {
         out.push_str(&format!("{}\n", output::fmt_path(&group.path)));
         for entry in group.routes {
-            out.push_str(&format!("  {}: {}\n", output::fmt_method(&entry.method), entry.summary));
+            out.push_str(&format!(
+                "  {}: {}\n",
+                output::fmt_method(&entry.method),
+                entry.summary
+            ));
         }
     }
 
@@ -364,9 +384,10 @@ fn scan_local_inventory(
         }
         for ns in read_namespaces(&source_root)? {
             if let Some(filter) = namespace_filter
-                && ns != filter {
-                    continue;
-                }
+                && ns != filter
+            {
+                continue;
+            }
             let versions = read_versions_with_route_counts(&source_root.join(&ns))?;
             if versions.is_empty() {
                 continue;
@@ -441,7 +462,11 @@ fn print_grouped_by_source(records: &[NamespaceRecord]) {
             current = Some(ns.source.as_str());
             println!("{}", output::fmt_source(&ns.source));
         }
-        println!("  {} ({})", output::fmt_namespace(&ns.namespace), format_versions(&ns.versions));
+        println!(
+            "  {} ({})",
+            output::fmt_namespace(&ns.namespace),
+            format_versions(&ns.versions)
+        );
     }
 }
 
@@ -625,7 +650,8 @@ mod tests {
         )
         .expect("write");
 
-        let out = render_namespace_version_detail("demo", "v1", None, Some("core")).expect("render");
+        let out =
+            render_namespace_version_detail("demo", "v1", None, Some("core")).expect("render");
         let plain = String::from_utf8(strip_ansi_escapes::strip(out)).unwrap();
         assert!(plain.contains("source: core"));
         assert!(plain.contains("POST: Core desc line"));

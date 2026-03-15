@@ -24,7 +24,9 @@ pub fn parse_spec(source: &str) -> Result<ParsedSpec, ApixError> {
     };
 
     let spec = parse_spec_with_compat(&raw).map_err(|err| {
-        ApixError::Parse(format!("Invalid OpenAPI spec (JSON/YAML), including compat retry: {err}"))
+        ApixError::Parse(format!(
+            "Invalid OpenAPI spec (JSON/YAML), including compat retry: {err}"
+        ))
     })?;
 
     let base_url = spec
@@ -57,8 +59,9 @@ fn parse_spec_with_compat(raw: &str) -> Result<Spec, String> {
         Ok(spec) => Ok(spec),
         Err(initial_err) => {
             let sanitized = sanitize_spec_for_compat(raw);
-            parse_spec_content(&sanitized)
-                .map_err(|sanitized_err| format!("initial parse: {initial_err}; sanitized parse: {sanitized_err}"))
+            parse_spec_content(&sanitized).map_err(|sanitized_err| {
+                format!("initial parse: {initial_err}; sanitized parse: {sanitized_err}")
+            })
         }
     }
 }
@@ -105,11 +108,13 @@ fn sanitize_spec_for_compat(content: &str) -> String {
     // 2. OpenAPI 3.1 (JSON Schema 2020-12) changed `exclusiveMinimum` and `exclusiveMaximum`
     // from booleans to numbers. Many 3.0 specs use booleans. We rename them to `x-` prefixed
     // extensions to allow the spec to parse while losing only the strictness of the constraint.
-    let re_exc = Regex::new(r"(?m)(exclusive(?:Minimum|Maximum))(\s*:\s*)(true|false)").expect("valid regex");
-    re_exc.replace_all(&content, |caps: &regex::Captures| {
-        format!("x-{}{}{}", &caps[1], &caps[2], &caps[3])
-    })
-    .into_owned()
+    let re_exc = Regex::new(r"(?m)(exclusive(?:Minimum|Maximum))(\s*:\s*)(true|false)")
+        .expect("valid regex");
+    re_exc
+        .replace_all(&content, |caps: &regex::Captures| {
+            format!("x-{}{}{}", &caps[1], &caps[2], &caps[3])
+        })
+        .into_owned()
 }
 
 pub fn format_security_schemes(
@@ -197,7 +202,14 @@ mod tests {
         assert_eq!(parsed.title, "Pet API");
         assert_eq!(parsed.version, "v1");
         assert_eq!(parsed.base_url, "https://api.example.com");
-        assert!(parsed.spec.paths.as_ref().map(|p| p.is_empty()).unwrap_or(true));
+        assert!(
+            parsed
+                .spec
+                .paths
+                .as_ref()
+                .map(|p| p.is_empty())
+                .unwrap_or(true)
+        );
 
         let _ = std::fs::remove_file(path);
     }
@@ -211,14 +223,22 @@ info:
 servers:
   - url: https://api.example.com
 paths: {}"#;
-        let path = std::env::temp_dir().join(format!("apix-parser-test-{}.yaml", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("apix-parser-test-{}.yaml", std::process::id()));
         std::fs::write(&path, spec).expect("write spec");
 
         let parsed = parse_spec(path.to_str().expect("path str")).expect("must parse");
         assert_eq!(parsed.title, "Pet API");
         assert_eq!(parsed.version, "v1");
         assert_eq!(parsed.base_url, "https://api.example.com");
-        assert!(parsed.spec.paths.as_ref().map(|p| p.is_empty()).unwrap_or(true));
+        assert!(
+            parsed
+                .spec
+                .paths
+                .as_ref()
+                .map(|p| p.is_empty())
+                .unwrap_or(true)
+        );
 
         let _ = std::fs::remove_file(path);
     }
@@ -226,7 +246,8 @@ paths: {}"#;
     #[test]
     fn parses_invalid_spec_fails() {
         let spec = r#"invalid JSON or YAML format"#;
-        let path = std::env::temp_dir().join(format!("apix-parser-invalid-{}.txt", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("apix-parser-invalid-{}.txt", std::process::id()));
         std::fs::write(&path, spec).expect("write spec");
 
         let res = parse_spec(path.to_str().expect("path str"));
@@ -250,7 +271,7 @@ paths: {}"#;
             security_schemes,
             ..Default::default()
         });
-        
+
         let mut req = oas3::spec::SecurityRequirement(BTreeMap::new());
         req.0.insert("bearerAuth".to_string(), vec![]);
         let reqs = vec![req];
@@ -272,7 +293,7 @@ paths: {}"#;
             security_schemes,
             ..Default::default()
         });
-        
+
         let mut req = oas3::spec::SecurityRequirement(BTreeMap::new());
         req.0.insert("apiKeyAuth".to_string(), vec![]);
         let reqs = vec![req];
@@ -305,12 +326,12 @@ paths: {}"#;
             security_schemes,
             ..Default::default()
         });
-        
+
         let mut req1 = oas3::spec::SecurityRequirement(BTreeMap::new());
         req1.0.insert("bearerAuth".to_string(), vec![]);
         let mut req2 = oas3::spec::SecurityRequirement(BTreeMap::new());
         req2.0.insert("apiKeyAuth".to_string(), vec![]);
-        
+
         let reqs = vec![req1, req2];
         assert_eq!(
             format_security_schemes(&reqs, &components),
@@ -357,11 +378,16 @@ paths:
                 minimum: -9223372036854776000
                 maximum: 9223372036854776000
 "#;
-        let path = std::env::temp_dir().join(format!("apix-parser-large-int-{}.yaml", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("apix-parser-large-int-{}.yaml", std::process::id()));
         std::fs::write(&path, spec).expect("write spec");
 
         let res = parse_spec(path.to_str().expect("path str"));
-        assert!(res.is_ok(), "Should parse spec with large integers: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "Should parse spec with large integers: {:?}",
+            res.err()
+        );
 
         let _ = std::fs::remove_file(path);
     }
@@ -372,7 +398,10 @@ paths:
         let output = sanitize_spec_for_compat(input);
         assert!(output.contains(&format!("minimum: {}", i64::MIN)));
         assert!(output.contains(&format!("maximum: {}", i64::MAX)));
-        assert!(output.contains("normal: 12345"), "in-range values must be unchanged");
+        assert!(
+            output.contains("normal: 12345"),
+            "in-range values must be unchanged"
+        );
     }
 
     #[test]
@@ -419,7 +448,7 @@ paths:
 
         let parsed = parse_spec(path.to_str().expect("path str")).expect("must parse 3.1");
         assert_eq!(parsed.title, "3.1 API");
-        
+
         let _ = std::fs::remove_file(path);
     }
 }

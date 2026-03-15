@@ -132,7 +132,7 @@ pub fn search(
         if !m.description.is_empty() {
             output::print_indented_dimmed(&m.description, 4);
         }
-        
+
         if !m.tags.is_empty() {
             let tags: Vec<String> = m.tags.into_iter().collect();
             let tags_str = format!("[{}]", tags.join(", "));
