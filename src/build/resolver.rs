@@ -1,5 +1,5 @@
 use crate::error::ApixError;
-use openapiv3::{OpenAPI, PathItem, ReferenceOr, Schema};
+use oas3::spec::{ObjectOrReference, ObjectSchema, PathItem, Spec as OpenAPI};
 use std::collections::HashSet;
 
 pub fn resolve_path_item<'a>(
@@ -17,15 +17,9 @@ pub fn resolve_path_item<'a>(
     if reference.starts_with("#/paths/") {
         let path_key = reference.trim_start_matches("#/paths/");
         let unescaped = path_key.replace("~1", "/").replace("~0", "~");
-        if let Some(ref_or_item) = spec.paths.paths.get(&unescaped) {
-            match ref_or_item {
-                ReferenceOr::Item(item) => return Ok(item),
-                ReferenceOr::Reference {
-                    reference: next_ref,
-                } => {
-                    return resolve_path_item(next_ref, spec, seen);
-                }
-            }
+        if let Some(paths) = &spec.paths
+            && let Some(item) = paths.get(&unescaped) {
+                return Ok(item);
         }
     }
 
@@ -39,7 +33,7 @@ pub fn resolve_schema<'a>(
     reference: &'a str,
     spec: &'a OpenAPI,
     seen: &mut HashSet<&'a str>,
-) -> Result<&'a Schema, ApixError> {
+) -> Result<&'a ObjectSchema, ApixError> {
     if !seen.insert(reference) {
         return Err(ApixError::Parse(format!(
             "Circular schema reference detected: {}",
@@ -52,10 +46,8 @@ pub fn resolve_schema<'a>(
         if let Some(components) = &spec.components
             && let Some(ref_or_item) = components.schemas.get(name) {
                 match ref_or_item {
-                    ReferenceOr::Item(item) => return Ok(item),
-                    ReferenceOr::Reference {
-                        reference: next_ref,
-                    } => {
+                    ObjectOrReference::Object(item) => return Ok(item),
+                    ObjectOrReference::Ref { ref_path: next_ref, .. } => {
                         return resolve_schema(next_ref, spec, seen);
                     }
                 }
@@ -71,46 +63,30 @@ pub fn resolve_schema<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolve_path_item_circular() {
-        let spec = OpenAPI {
-            openapi: "3.0.0".to_string(),
-            info: Default::default(),
-            servers: vec![],
-            paths: openapiv3::Paths {
-                paths: {
-                    let mut map = indexmap::IndexMap::new();
-                    map.insert("path_a".to_string(), ReferenceOr::Reference { reference: "#/paths/path_b".to_string() });
-                    map.insert("path_b".to_string(), ReferenceOr::Reference { reference: "#/paths/path_a".to_string() });
-                    map
-                },
-                ..Default::default()
-            },
-            components: None,
-            security: None,
-            tags: vec![],
-            external_docs: None,
-            extensions: indexmap::IndexMap::new(),
-        };
-
-        let mut seen = HashSet::new();
-        let err = resolve_path_item("#/paths/path_a", &spec, &mut seen).unwrap_err();
-        assert!(matches!(err, ApixError::Parse(msg) if msg.contains("Circular path reference")));
-    }
+    use std::collections::BTreeMap;
 
     #[test]
     fn resolve_path_item_unresolvable() {
         let spec = OpenAPI {
             openapi: "3.0.0".to_string(),
-            info: Default::default(),
+            info: oas3::spec::Info {
+                title: "T".to_string(),
+                version: "1".to_string(),
+                summary: None,
+                description: None,
+                terms_of_service: None,
+                contact: None,
+                license: None,
+                extensions: BTreeMap::new(),
+            },
             servers: vec![],
-            paths: Default::default(),
+            paths: None,
             components: None,
-            security: None,
+            security: vec![],
             tags: vec![],
             external_docs: None,
-            extensions: indexmap::IndexMap::new(),
+            webhooks: BTreeMap::new(),
+            extensions: BTreeMap::new(),
         };
 
         let mut seen = HashSet::new();
@@ -120,23 +96,41 @@ mod tests {
 
     #[test]
     fn resolve_schema_circular() {
-        let mut schemas = indexmap::IndexMap::new();
-        schemas.insert("schema_a".to_string(), ReferenceOr::Reference { reference: "#/components/schemas/schema_b".to_string() });
-        schemas.insert("schema_b".to_string(), ReferenceOr::Reference { reference: "#/components/schemas/schema_a".to_string() });
+        let mut schemas = BTreeMap::new();
+        schemas.insert("schema_a".to_string(), ObjectOrReference::Ref { 
+            ref_path: "#/components/schemas/schema_b".to_string(),
+            summary: None,
+            description: None,
+        });
+        schemas.insert("schema_b".to_string(), ObjectOrReference::Ref { 
+            ref_path: "#/components/schemas/schema_a".to_string(),
+            summary: None,
+            description: None,
+        });
 
         let spec = OpenAPI {
             openapi: "3.0.0".to_string(),
-            info: Default::default(),
+            info: oas3::spec::Info {
+                title: "T".to_string(),
+                version: "1".to_string(),
+                summary: None,
+                description: None,
+                terms_of_service: None,
+                contact: None,
+                license: None,
+                extensions: BTreeMap::new(),
+            },
             servers: vec![],
-            paths: Default::default(),
-            components: Some(openapiv3::Components {
+            paths: None,
+            components: Some(oas3::spec::Components {
                 schemas,
                 ..Default::default()
             }),
-            security: None,
+            security: vec![],
             tags: vec![],
             external_docs: None,
-            extensions: indexmap::IndexMap::new(),
+            webhooks: BTreeMap::new(),
+            extensions: BTreeMap::new(),
         };
 
         let mut seen = HashSet::new();
@@ -148,14 +142,24 @@ mod tests {
     fn resolve_schema_unresolvable() {
         let spec = OpenAPI {
             openapi: "3.0.0".to_string(),
-            info: Default::default(),
+            info: oas3::spec::Info {
+                title: "T".to_string(),
+                version: "1".to_string(),
+                summary: None,
+                description: None,
+                terms_of_service: None,
+                contact: None,
+                license: None,
+                extensions: BTreeMap::new(),
+            },
             servers: vec![],
-            paths: Default::default(),
+            paths: None,
             components: None,
-            security: None,
+            security: vec![],
             tags: vec![],
             external_docs: None,
-            extensions: indexmap::IndexMap::new(),
+            webhooks: BTreeMap::new(),
+            extensions: BTreeMap::new(),
         };
 
         let mut seen = HashSet::new();

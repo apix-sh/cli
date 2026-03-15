@@ -16,7 +16,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-openapiv3 = "2"
+oas3 = { version = "0.20", features = ["yaml-spec"] }
 askama = "0.12"
 ureq = { version = "2", features = ["json"] }
 grep-regex = "0.1"

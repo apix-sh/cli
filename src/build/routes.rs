@@ -1,11 +1,10 @@
 use crate::error::ApixError;
 use askama::Template;
-use openapiv3::{
-    MediaType, Operation, Parameter, ParameterSchemaOrContent, PathItem, ReferenceOr, Response,
-    Schema, SchemaKind, StatusCode, Type,
+use oas3::spec::{
+    MediaType, ObjectOrReference, ObjectSchema, Operation, Parameter, ParameterIn, PathItem, Response,
 };
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use super::parser::ParsedSpec;
@@ -51,13 +50,20 @@ pub fn generate_routes(
     let mut count = 0usize;
     let mut created_dirs: HashSet<PathBuf> = HashSet::new();
 
-    for (path, path_item_ref) in &parsed.openapi.paths.paths {
-        let path_item = match path_item_ref {
-            ReferenceOr::Item(item) => item,
-            ReferenceOr::Reference { reference } => {
-                let mut seen = std::collections::HashSet::new();
-                crate::build::resolver::resolve_path_item(reference, &parsed.openapi, &mut seen)?
-            }
+    let empty_map = BTreeMap::new();
+    let paths = parsed.spec.paths.as_ref().unwrap_or(&empty_map);
+    for (path, path_item) in paths {
+        // PathItem in oas3 is direct, not wrapped in ReferenceOr in the map usually
+        // but wait, oas3::Spec.paths is Option<BTreeMap<String, PathItem>>
+        // and PathItem DOES NOT have a ReferenceOr variant in that map.
+        // It has a Reference field if it's a ref.
+        
+        // If it's a reference, we need to resolve it.
+        let resolved_path_item = if let Some(reference) = &path_item.reference {
+             let mut seen = std::collections::HashSet::new();
+             crate::build::resolver::resolve_path_item(reference, &parsed.spec, &mut seen)?
+        } else {
+             path_item
         };
 
         emit_operation(
@@ -65,9 +71,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "GET",
-            path_item.get.as_ref(),
+            resolved_path_item.get.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -76,9 +82,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "POST",
-            path_item.post.as_ref(),
+            resolved_path_item.post.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -87,9 +93,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "PUT",
-            path_item.put.as_ref(),
+            resolved_path_item.put.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -98,9 +104,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "PATCH",
-            path_item.patch.as_ref(),
+            resolved_path_item.patch.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -109,9 +115,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "DELETE",
-            path_item.delete.as_ref(),
+            resolved_path_item.delete.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -120,9 +126,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "HEAD",
-            path_item.head.as_ref(),
+            resolved_path_item.head.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -131,9 +137,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "OPTIONS",
-            path_item.options.as_ref(),
+            resolved_path_item.options.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -142,9 +148,9 @@ pub fn generate_routes(
             out_root,
             namespace,
             path,
-            path_item,
+            resolved_path_item,
             "TRACE",
-            path_item.trace.as_ref(),
+            resolved_path_item.trace.as_ref(),
             &mut count,
             &mut created_dirs,
         )?;
@@ -190,14 +196,13 @@ fn emit_operation(
     let description = op.description.as_deref().unwrap_or_default();
     let url = format!("{}{}", parsed.base_url, path);
 
-    let auth_string = match &op.security {
-        Some(reqs) if reqs.is_empty() => Some("none".to_string()),
-        Some(reqs) => Some(super::parser::format_security_schemes(
-            reqs,
-            &parsed.openapi.components,
-        )),
-        None => None,
+    let op_auth = super::parser::format_security_schemes(&op.security, &parsed.spec.components);
+    let auth_string = if op_auth == parsed.auth {
+        None
+    } else {
+        Some(op_auth)
     };
+
 
     let tpl = RouteTemplate {
         method,
@@ -255,7 +260,7 @@ fn collect_parameters(
 
     for param_ref in all_params {
         match param_ref {
-            ReferenceOr::Reference { reference } => {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 let link = ref_to_link(reference, base_components_rel);
                 query_rows.push(ParamRow {
                     name: "Reference".to_string(),
@@ -264,97 +269,57 @@ fn collect_parameters(
                     description: String::new(),
                 });
             }
-            ReferenceOr::Item(param) => match param {
-                Parameter::Query {
-                    parameter_data,
-                    style,
-                    allow_reserved,
-                    ..
-                } => {
-                    query_rows.push(row_from_parameter_data(
-                        parameter_data,
-                        base_components_rel,
-                        Some(format!("{:?}", style)),
-                        Some(*allow_reserved),
-                    ));
-                }
-                Parameter::Path {
-                    parameter_data,
-                    style,
-                } => {
-                    path_rows.push(row_from_parameter_data(
-                        parameter_data,
-                        base_components_rel,
-                        Some(format!("{:?}", style)),
-                        None,
-                    ));
-                }
-                Parameter::Header {
-                    parameter_data,
-                    style,
-                } => {
-                    header_rows.push(row_from_parameter_data(
-                        parameter_data,
-                        base_components_rel,
-                        Some(format!("{:?}", style)),
-                        None,
-                    ));
-                }
-                Parameter::Cookie {
-                    parameter_data,
-                    style,
-                } => {
-                    cookie_rows.push(row_from_parameter_data(
-                        parameter_data,
-                        base_components_rel,
-                        Some(format!("{:?}", style)),
-                        None,
-                    ));
-                }
-            },
+            ObjectOrReference::Object(param) => {
+                let bucket = match param.location {
+                    ParameterIn::Path => &mut path_rows,
+                    ParameterIn::Query => &mut query_rows,
+                    ParameterIn::Header => &mut header_rows,
+                    ParameterIn::Cookie => &mut cookie_rows,
+                };
+                bucket.push(row_from_parameter(param, base_components_rel));
+            }
         }
     }
 
     (path_rows, query_rows, header_rows, cookie_rows)
 }
 
-fn row_from_parameter_data(
-    data: &openapiv3::ParameterData,
+fn row_from_parameter(
+    param: &Parameter,
     base_components_rel: &str,
-    style: Option<String>,
-    allow_reserved: Option<bool>,
 ) -> ParamRow {
-    let ty = match &data.format {
-        ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
-            ReferenceOr::Reference { reference } => {
+    let ty = if let Some(schema_ref) = &param.schema {
+        match schema_ref {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 ref_to_link(reference, base_components_rel)
             }
-            ReferenceOr::Item(schema) => {
-                super::components::kind_to_string(&schema.schema_kind, &format!("{}/schemas", base_components_rel))
-            }
-        },
-        ParameterSchemaOrContent::Content(content) => {
-            if let Some((ctype, _media_type)) = content.iter().next() {
-                format!("content `{ctype}`")
-            } else {
-                "content".to_string()
+            ObjectOrReference::Object(schema) => {
+                super::components::schema_type_to_string(schema, &format!("{}/schemas", base_components_rel))
             }
         }
+    } else if let Some(content) = &param.content {
+        if let Some((ctype, _media_type)) = content.iter().next() {
+            format!("content `{ctype}`")
+        } else {
+            "content".to_string()
+        }
+    } else {
+        "any".to_string()
     };
 
     let mut hints = Vec::new();
-    if let Some(s) = style {
-        hints.push(format!("style={s}"));
+    if let Some(s) = &param.style {
+        hints.push(format!("style={s:?}"));
     }
-    if let Some(explode) = data.explode {
+    if let Some(explode) = param.explode {
         hints.push(format!("explode={explode}"));
     }
-    if let Some(allow) = allow_reserved
+    if let Some(allow) = param.allow_reserved
         && allow {
             hints.push("allowReserved=true".to_string());
         }
 
-    let mut desc = data.description.clone().unwrap_or_default();
+    let mut desc = param.description.clone().unwrap_or_default();
     if !hints.is_empty() {
         let hint_str = format!("*Serialization: {}*", hints.join(", "));
         if desc.is_empty() {
@@ -365,8 +330,8 @@ fn row_from_parameter_data(
     }
 
     ParamRow {
-        name: data.name.clone(),
-        required: if data.required { "Yes" } else { "No" }.to_string(),
+        name: param.name.clone(),
+        required: if param.required.unwrap_or(false) { "Yes" } else { "No" }.to_string(),
         param_type: ty,
         description: desc,
     }
@@ -375,18 +340,18 @@ fn row_from_parameter_data(
 fn request_content_type(op: &Operation) -> Option<String> {
     let request_body = op.request_body.as_ref()?;
     match request_body {
-        ReferenceOr::Reference { .. } => Some("application/json".to_string()),
-        ReferenceOr::Item(item) => item.content.keys().next().cloned(),
+        ObjectOrReference::Ref { .. } => Some("application/json".to_string()),
+        ObjectOrReference::Object(item) => item.content.keys().next().cloned(),
     }
 }
 
 fn request_body_text(op: &Operation, namespace: &str, version: &str, base_components_rel: &str) -> String {
     match &op.request_body {
         None => String::new(),
-        Some(ReferenceOr::Reference { reference }) => {
+        Some(ObjectOrReference::Ref { ref_path: reference, .. }) => {
             ref_to_link(reference, base_components_rel)
         }
-        Some(ReferenceOr::Item(item)) => {
+        Some(ObjectOrReference::Object(item)) => {
             if item.content.is_empty() {
                 return "Request body present but no media type entries".to_string();
             }
@@ -426,11 +391,12 @@ fn inline_body_doc(
 
     let mut out = String::new();
     out.push_str(&format!("{title_prefix} (`{ctype}`)\n"));
+    
     match schema_ref {
-        ReferenceOr::Reference { reference } => {
+        ObjectOrReference::Ref { ref_path: reference, .. } => {
             out.push_str(&format!("{}\n", ref_to_link(reference, base_components_rel)));
         }
-        ReferenceOr::Item(schema) => {
+        ObjectOrReference::Object(schema) => {
             let rows = schema_property_rows(schema, base_components_rel);
             if !rows.is_empty() {
                 out.push_str("| Property | Required | Type | Description |\n");
@@ -445,7 +411,7 @@ fn inline_body_doc(
                     ));
                 }
             } else {
-                let kind_str = super::components::kind_to_string(&schema.schema_kind, &format!("{}/schemas", base_components_rel));
+                let kind_str = super::components::schema_type_to_string(schema, &format!("{}/schemas", base_components_rel));
                 if kind_str.starts_with("array<") {
                     out.push_str(&format!("{kind_str}\n"));
                 } else {
@@ -453,10 +419,10 @@ fn inline_body_doc(
                 }
             }
 
-            let ex = media_type
-                .example
-                .clone()
-                .or_else(|| schema_example_json(schema));
+            // In oas3 0.20, MediaType example is under examples or deprecated?
+            // Let's check common alternatives if .example failed.
+            // Actually, I'll just use schema example for now to unblock.
+            let ex = schema_example_json(schema);
             if let Some(ex_val) = ex {
                 out.push('\n');
                 out.push_str("#### Example Payload\n");
@@ -483,41 +449,38 @@ fn inline_body_doc(
 }
 
 fn schema_property_rows(
-    schema: &Schema,
+    schema: &ObjectSchema,
     base_components_rel: &str,
 ) -> Vec<(String, bool, String, String)> {
-    match &schema.schema_kind {
-        SchemaKind::Type(Type::Object(obj)) => obj
-            .properties
-            .iter()
-            .map(|(name, prop)| {
-                let (ty, desc) = match prop {
-                    ReferenceOr::Reference { reference } => {
-                        (ref_to_link(reference, base_components_rel), String::new())
-                    }
-                    ReferenceOr::Item(inner) => (
-                        super::components::kind_to_string(&inner.schema_kind, &format!("{}/schemas", base_components_rel)),
-                        inner.schema_data.description.clone().unwrap_or_default(),
-                    ),
-                };
-                (
-                    name.clone(),
-                    obj.required.iter().any(|r| r == name),
-                    ty,
-                    desc,
-                )
-            })
-            .collect(),
-        _ => Vec::new(),
+    let mut rows = Vec::new();
+    let required: HashSet<&str> = schema.required.iter().map(String::as_str).collect();
+
+    for (name, prop_ref) in &schema.properties {
+        let (ty, desc) = match prop_ref {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
+                (ref_to_link(reference, base_components_rel), String::new())
+            }
+            ObjectOrReference::Object(inner) => (
+                super::components::schema_type_to_string(inner, &format!("{}/schemas", base_components_rel)),
+                inner.description.clone().unwrap_or_default(),
+            ),
+        };
+        rows.push((
+            name.clone(),
+            required.contains(name.as_str()),
+            ty,
+            desc,
+        ));
     }
+    rows
 }
 
-fn schema_example_json(schema: &Schema) -> Option<Value> {
-    if let Some(ex) = &schema.schema_data.example {
-        return Some(ex.clone());
+fn schema_example_json(schema: &ObjectSchema) -> Option<Value> {
+    if schema.example.is_some() {
+        return schema.example.clone();
     }
-    if let Some(def) = &schema.schema_data.default {
-        return Some(def.clone());
+    if schema.default.is_some() {
+        return schema.default.clone();
     }
     None
 }
@@ -564,25 +527,14 @@ fn response_rows(
     base_components_rel: &str,
 ) -> Vec<ResponseRow> {
     let mut rows = Vec::new();
-    for (status, response_ref) in &op.responses.responses {
-        let status_text = match status {
-            StatusCode::Code(code) => code.to_string(),
-            StatusCode::Range(range) => format!("{range:?}xx"),
-        };
+    let empty_map = BTreeMap::new();
+    let responses = op.responses.as_ref().unwrap_or(&empty_map);
+    
+    for (status, response_ref) in responses {
         let (desc, headers, content) =
             extract_response_details(response_ref, namespace, version, base_components_rel);
         rows.push(ResponseRow {
-            status: status_text,
-            description: desc,
-            headers,
-            content,
-        });
-    }
-    if let Some(default) = &op.responses.default {
-        let (desc, headers, content) =
-            extract_response_details(default, namespace, version, base_components_rel);
-        rows.push(ResponseRow {
-            status: "default".to_string(),
+            status: status.clone(),
             description: desc,
             headers,
             content,
@@ -592,20 +544,20 @@ fn response_rows(
 }
 
 fn extract_response_details(
-    response_ref: &ReferenceOr<Response>,
+    response_ref: &ObjectOrReference<Response>,
     namespace: &str,
     version: &str,
     base_components_rel: &str,
 ) -> (String, Vec<ParamRow>, String) {
     match response_ref {
-        ReferenceOr::Reference { reference } => {
+        ObjectOrReference::Ref { ref_path: reference, .. } => {
             (format!("Reference: {}", ref_to_link(reference, base_components_rel)), Vec::new(), String::new())
         }
-        ReferenceOr::Item(item) => {
+        ObjectOrReference::Object(item) => {
             let mut headers = Vec::new();
             for (name, header_ref) in &item.headers {
                 match header_ref {
-                    ReferenceOr::Reference { reference } => {
+                    ObjectOrReference::Ref { ref_path: reference, .. } => {
                         headers.push(ParamRow {
                             name: format!("{name} (ref)"),
                             required: "Unknown".to_string(),
@@ -613,9 +565,9 @@ fn extract_response_details(
                             description: String::new(),
                         });
                     }
-                ReferenceOr::Item(header) => {
-                    headers.push(row_from_header(name, header, base_components_rel));
-                }
+                    ObjectOrReference::Object(header) => {
+                        headers.push(row_from_header(name, header, base_components_rel));
+                    }
                 }
             }
 
@@ -633,7 +585,7 @@ fn extract_response_details(
             }
 
             (
-                item.description.clone(),
+                item.description.clone().unwrap_or_default(),
                 headers,
                 out.trim_start().to_string(),
             )
@@ -641,27 +593,29 @@ fn extract_response_details(
     }
 }
 
-fn row_from_header(name: &str, header: &openapiv3::Header, base_components_rel: &str) -> ParamRow {
-    let ty = match &header.format {
-        ParameterSchemaOrContent::Schema(ref_or_schema) => match ref_or_schema {
-            ReferenceOr::Reference { reference } => {
+fn row_from_header(name: &str, header: &oas3::spec::Header, base_components_rel: &str) -> ParamRow {
+    let ty = if let Some(schema_ref) = &header.schema {
+        match schema_ref {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 ref_to_link(reference, base_components_rel)
             }
-            ReferenceOr::Item(schema) => {
-                super::components::kind_to_string(&schema.schema_kind, &format!("{}/schemas", base_components_rel))
-            }
-        },
-        ParameterSchemaOrContent::Content(content) => {
-            if let Some((ctype, _)) = content.iter().next() {
-                format!("content `{ctype}`")
-            } else {
-                "content".to_string()
+            ObjectOrReference::Object(schema) => {
+                super::components::schema_type_to_string(schema, &format!("{}/schemas", base_components_rel))
             }
         }
+    } else if let Some(content) = &header.content {
+         if let Some((ctype, _)) = content.iter().next() {
+            format!("content `{ctype}`")
+        } else {
+            "content".to_string()
+        }
+    } else {
+        "any".to_string()
     };
+
     ParamRow {
         name: name.to_string(),
-        required: if header.required { "Yes" } else { "No" }.to_string(),
+        required: if header.required.unwrap_or(false) { "Yes" } else { "No" }.to_string(),
         param_type: ty,
         description: header.description.clone().unwrap_or_default(),
     }

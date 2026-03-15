@@ -1,11 +1,13 @@
 use crate::error::ApixError;
 use askama::Template;
-use openapiv3::{ReferenceOr, Schema, SchemaKind, Type, Parameter};
+use oas3::spec::{ObjectOrReference, ObjectSchema, ParameterIn};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
 
 use super::parser::ParsedSpec;
+use super::schema_helpers::{is_type, primary_type};
+use oas3::spec::SchemaType;
 
 #[derive(Debug)]
 pub struct PropertyRow {
@@ -59,7 +61,7 @@ pub fn generate_components(
     let components_dir = out_root.join("_components");
     std::fs::create_dir_all(&components_dir)?;
 
-    let Some(components) = &parsed.openapi.components else {
+    let Some(components) = &parsed.spec.components else {
         return Ok(0);
     };
 
@@ -86,33 +88,34 @@ pub fn generate_components(
     std::fs::create_dir_all(&params_dir)?;
     for (name, param_ref) in &components.parameters {
         match param_ref {
-            ReferenceOr::Reference { reference } => {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 let tpl = GenericTemplate { kind: "Parameter Reference", name, content: format!("Ref: {reference}") };
                 std::fs::write(params_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
-            ReferenceOr::Item(param) => {
-                let (location, parameter_data) = match param {
-                    Parameter::Query { parameter_data, .. } => ("query", parameter_data),
-                    Parameter::Path { parameter_data, .. } => ("path", parameter_data),
-                    Parameter::Header { parameter_data, .. } => ("header", parameter_data),
-                    Parameter::Cookie { parameter_data, .. } => ("cookie", parameter_data),
+            ObjectOrReference::Object(param) => {
+                let location = match param.location {
+                    ParameterIn::Query => "query",
+                    ParameterIn::Path => "path",
+                    ParameterIn::Header => "header",
+                    ParameterIn::Cookie => "cookie",
                 };
-                let ptype = match &parameter_data.format {
-                    openapiv3::ParameterSchemaOrContent::Schema(s) => match s {
-                        ReferenceOr::Reference { reference } => {
+                let ptype = if let Some(schema_ref) = &param.schema {
+                    match schema_ref {
+                        ObjectOrReference::Ref { ref_path: reference, .. } => {
                             let rname = reference.rsplit('/').next().unwrap_or(reference);
                             format!("[{rname}](../schemas/{rname}.md)")
                         }
-                        ReferenceOr::Item(inner) => kind_to_string(&inner.schema_kind, "../schemas"),
-                    },
-                    _ => "content".to_string(),
+                        ObjectOrReference::Object(inner) => schema_type_to_string(inner, "../schemas"),
+                    }
+                } else {
+                    "content".to_string()
                 };
                 let tpl = ParameterTemplate {
                     name,
                     location,
-                    required: parameter_data.required,
+                    required: param.required.unwrap_or(false),
                     param_type: &ptype,
-                    description: parameter_data.description.as_deref().unwrap_or_default(),
+                    description: param.description.as_deref().unwrap_or_default(),
                 };
                 std::fs::write(params_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
@@ -125,11 +128,11 @@ pub fn generate_components(
     std::fs::create_dir_all(&responses_dir)?;
     for (name, resp_ref) in &components.responses {
         match resp_ref {
-            ReferenceOr::Item(resp) => {
-                let tpl = ResponseTemplate { name, description: &resp.description };
+            ObjectOrReference::Object(resp) => {
+                let tpl = ResponseTemplate { name, description: resp.description.as_deref().unwrap_or_default() };
                 std::fs::write(responses_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
-            ReferenceOr::Reference { reference } => {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 let tpl = GenericTemplate { kind: "Response Reference", name, content: format!("Ref: {reference}") };
                 std::fs::write(responses_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
@@ -142,11 +145,11 @@ pub fn generate_components(
     std::fs::create_dir_all(&headers_dir)?;
     for (name, header_ref) in &components.headers {
         match header_ref {
-             ReferenceOr::Item(header) => {
+             ObjectOrReference::Object(header) => {
                 let tpl = GenericTemplate { kind: "Header", name, content: header.description.clone().unwrap_or_default() };
                 std::fs::write(headers_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
-            ReferenceOr::Reference { reference } => {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 let tpl = GenericTemplate { kind: "Header Reference", name, content: format!("Ref: {reference}") };
                 std::fs::write(headers_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
@@ -159,11 +162,11 @@ pub fn generate_components(
     std::fs::create_dir_all(&bodies_dir)?;
     for (name, body_ref) in &components.request_bodies {
         match body_ref {
-            ReferenceOr::Item(body) => {
+            ObjectOrReference::Object(body) => {
                 let tpl = GenericTemplate { kind: "Request Body", name, content: format!("Description: {}", body.description.as_deref().unwrap_or_default()) };
                 std::fs::write(bodies_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
-            ReferenceOr::Reference { reference } => {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 let tpl = GenericTemplate { kind: "Request Body Reference", name, content: format!("Ref: {reference}") };
                 std::fs::write(bodies_dir.join(format!("{name}.md")), tpl.render().unwrap())?;
             }
@@ -175,19 +178,19 @@ pub fn generate_components(
 }
 
 fn schema_details(
-    schema_ref: &ReferenceOr<Schema>,
+    schema_ref: &ObjectOrReference<ObjectSchema>,
     namespace: &str,
     parsed: &ParsedSpec,
 ) -> (String, String, Vec<PropertyRow>) {
     match schema_ref {
-        ReferenceOr::Reference { reference } => (
+        ObjectOrReference::Ref { ref_path: reference, .. } => (
             "reference".to_string(),
             format!("Reference to `{reference}`"),
             Vec::new(),
         ),
-        ReferenceOr::Item(schema) => {
-            let schema_type = kind_to_string(&schema.schema_kind, ".");
-            let mut description = schema.schema_data.description.clone().unwrap_or_default();
+        ObjectOrReference::Object(schema) => {
+            let schema_type = schema_type_to_string(schema, ".");
+            let mut description = schema.description.clone().unwrap_or_default();
             if let Some(variants) = variant_links(schema, namespace, parsed) {
                 if !description.is_empty() {
                     description.push_str("\n\n");
@@ -200,72 +203,67 @@ fn schema_details(
     }
 }
 
-fn collect_properties(schema: &Schema, namespace: &str, parsed: &ParsedSpec) -> Vec<PropertyRow> {
-    match &schema.schema_kind {
-        SchemaKind::Type(Type::Object(obj)) => {
-            let mut rows = Vec::new();
-            let required: HashSet<&str> = obj.required.iter().map(String::as_str).collect();
-            for (prop_name, prop_schema) in &obj.properties {
-                let (ptype, desc) = prop_type_and_description(prop_schema, namespace, parsed);
-                rows.push(PropertyRow {
-                    name: prop_name.to_string(),
-                    required: if required.contains(prop_name.as_str()) {
-                        "Yes".to_string()
-                    } else {
-                        "No".to_string()
-                    },
-                    prop_type: ptype,
-                    description: desc,
-                });
+fn collect_properties(schema: &ObjectSchema, namespace: &str, parsed: &ParsedSpec) -> Vec<PropertyRow> {
+    let mut rows = Vec::new();
+    let required: HashSet<&str> = schema.required.iter().map(String::as_str).collect();
+    
+    // Properties from this schema
+    for (prop_name, prop_schema) in &schema.properties {
+        let (ptype, desc) = prop_type_and_description(prop_schema, namespace, parsed);
+        rows.push(PropertyRow {
+            name: prop_name.to_string(),
+            required: if required.contains(prop_name.as_str()) {
+                "Yes".to_string()
+            } else {
+                "No".to_string()
+            },
+            prop_type: ptype,
+            description: desc,
+        });
+    }
+
+    // Propeties from all_of composition
+    for item in &schema.all_of {
+        match item {
+            ObjectOrReference::Object(inner) => {
+                rows.extend(collect_properties(inner, namespace, parsed));
             }
-            rows
-        }
-        SchemaKind::AllOf { all_of } => {
-            let mut rows = Vec::new();
-            for item in all_of {
-                match item {
-                    ReferenceOr::Item(inner) => {
-                        rows.extend(collect_properties(inner, namespace, parsed));
-                    }
-                    ReferenceOr::Reference { reference } => {
-                        let mut seen = HashSet::new();
-                        if let Ok(resolved) = crate::build::resolver::resolve_schema(
-                            reference,
-                            &parsed.openapi,
-                            &mut seen,
-                        ) {
-                            rows.extend(collect_properties(resolved, namespace, parsed));
-                        } else {
-                            let name = reference.rsplit('/').next().unwrap_or(reference);
-                            rows.push(PropertyRow {
-                                name: format!("(ref: {name})"),
-                                required: "Unknown".to_string(),
-                                prop_type: format!("[{name}]({name}.md)"),
-                                description: "Unresolved reference".to_string(),
-                            });
-                        }
-                    }
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
+                let mut seen = HashSet::new();
+                if let Ok(resolved) = crate::build::resolver::resolve_schema(
+                    reference,
+                    &parsed.spec,
+                    &mut seen,
+                ) {
+                    rows.extend(collect_properties(resolved, namespace, parsed));
+                } else {
+                    let name = reference.rsplit('/').next().unwrap_or(reference);
+                    rows.push(PropertyRow {
+                        name: format!("(ref: {name})"),
+                        required: "Unknown".to_string(),
+                        prop_type: format!("[{name}]({name}.md)"),
+                        description: "Unresolved reference".to_string(),
+                    });
                 }
             }
-            rows
         }
-        _ => Vec::new(),
     }
+    rows
 }
 
 fn prop_type_and_description(
-    prop_schema: &ReferenceOr<Box<Schema>>,
+    prop_schema: &ObjectOrReference<ObjectSchema>,
     _namespace: &str,
     _parsed: &ParsedSpec,
 ) -> (String, String) {
     match prop_schema {
-        ReferenceOr::Reference { reference } => {
+        ObjectOrReference::Ref { ref_path: reference, .. } => {
             let name = reference.rsplit('/').next().unwrap_or(reference);
             (format!("[{name}]({name}.md)"), String::new())
         }
-        ReferenceOr::Item(inner) => {
-            let ptype = kind_to_string(&inner.schema_kind, ".");
-            let mut description = inner.schema_data.description.clone().unwrap_or_default();
+        ObjectOrReference::Object(inner) => {
+            let ptype = schema_type_to_string(inner, ".");
+            let mut description = inner.description.clone().unwrap_or_default();
             if let Some(enum_values) = string_enum_values(inner) {
                 if !description.is_empty() {
                     description.push(' ');
@@ -277,31 +275,26 @@ fn prop_type_and_description(
     }
 }
 
-fn string_enum_values(schema: &Schema) -> Option<Vec<String>> {
-    match &schema.schema_kind {
-        SchemaKind::Type(Type::String(st)) => {
-            let vals: Vec<String> = st.enumeration.iter().filter_map(|v| v.clone()).collect();
-            if vals.is_empty() { None } else { Some(vals) }
-        }
-        _ => None,
-    }
+fn string_enum_values(schema: &ObjectSchema) -> Option<Vec<String>> {
+    let vals: Vec<String> = schema.enum_values.iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+    if vals.is_empty() { None } else { Some(vals) }
 }
 
-fn variant_links(schema: &Schema, _namespace: &str, _parsed: &ParsedSpec) -> Option<String> {
-    let variants: Vec<&ReferenceOr<Schema>> = match &schema.schema_kind {
-        SchemaKind::OneOf { one_of } => one_of.iter().collect(),
-        SchemaKind::AnyOf { any_of } => any_of.iter().collect(),
-        _ => return None,
-    };
+fn variant_links(schema: &ObjectSchema, _namespace: &str, _parsed: &ParsedSpec) -> Option<String> {
+    let mut variants = Vec::new();
+    variants.extend(&schema.one_of);
+    variants.extend(&schema.any_of);
 
     let refs: Vec<String> = variants
         .iter()
         .map(|item| match item {
-            ReferenceOr::Reference { reference } => {
+            ObjectOrReference::Ref { ref_path: reference, .. } => {
                 let name = reference.rsplit('/').next().unwrap_or(reference);
                 format!("- [{name}]({name}.md)")
             }
-            ReferenceOr::Item(_) => "- (Inline Schema)".to_string(),
+            ObjectOrReference::Object(_) => "- (Inline Schema)".to_string(),
         })
         .collect();
 
@@ -312,40 +305,45 @@ fn variant_links(schema: &Schema, _namespace: &str, _parsed: &ParsedSpec) -> Opt
     }
 }
 
-pub(crate) fn kind_to_string(kind: &SchemaKind, schema_dir_rel: &str) -> String {
-    match kind {
-        SchemaKind::Type(ty) => match ty {
-            Type::String(_) => "string".to_string(),
-            Type::Number(_) => "number".to_string(),
-            Type::Integer(_) => "integer".to_string(),
-            Type::Object(_) => "object".to_string(),
-            Type::Array(arr) => {
-                if let Some(items) = &arr.items {
-                    match items {
-                        ReferenceOr::Reference { reference } => {
-                            let name = reference.rsplit('/').next().unwrap_or(reference);
-                            format!("array<[{name}]({schema_dir_rel}/{name}.md)>")
-                        }
-                        ReferenceOr::Item(item) => {
-                            format!("array<{}>", kind_to_string(&item.schema_kind, schema_dir_rel))
-                        }
+pub(crate) fn schema_type_to_string(schema: &ObjectSchema, schema_dir_rel: &str) -> String {
+    // Check composition first
+    if !schema.one_of.is_empty() { return format!("oneOf({})", schema.one_of.len()); }
+    if !schema.any_of.is_empty() { return format!("anyOf({})", schema.any_of.len()); }
+    if !schema.all_of.is_empty() { return format!("allOf({})", schema.all_of.len()); }
+
+    // Check array with items
+    if is_type(schema, SchemaType::Array) {
+        if let Some(items) = &schema.items {
+            return match items.as_ref() {
+                oas3::spec::Schema::Object(box_ref) => match box_ref.as_ref() {
+                    ObjectOrReference::Ref { ref_path: reference, .. } => {
+                        let name = reference.rsplit('/').next().unwrap_or(reference);
+                        format!("array<[{name}]({schema_dir_rel}/{name}.md)>")
                     }
-                } else {
-                    "array".to_string()
-                }
-            }
-            Type::Boolean(_) => "boolean".to_string(),
-        },
-        SchemaKind::OneOf { one_of } => format!("oneOf({})", one_of.len()),
-        SchemaKind::AnyOf { any_of } => format!("anyOf({})", any_of.len()),
-        SchemaKind::AllOf { all_of } => format!("allOf({})", all_of.len()),
-        SchemaKind::Not { .. } => "not".to_string(),
-        SchemaKind::Any(_) => "any".to_string(),
+                    ObjectOrReference::Object(inner) => {
+                        format!("array<{}>", schema_type_to_string(inner, schema_dir_rel))
+                    }
+                },
+                _ => "array".to_string(),
+            };
+        }
+        return "array".to_string();
     }
+
+    match primary_type(schema) {
+        Some(SchemaType::String) => "string",
+        Some(SchemaType::Number) => "number",
+        Some(SchemaType::Integer) => "integer",
+        Some(SchemaType::Object) => "object",
+        Some(SchemaType::Array) => "array",
+        Some(SchemaType::Boolean) => "boolean",
+        Some(SchemaType::Null) => "null",
+        None => "any",
+    }.to_string()
 }
 
 #[allow(dead_code)]
-fn _schema_to_json(schema: &Schema) -> Value {
+fn _schema_to_json(schema: &ObjectSchema) -> Value {
     serde_json::to_value(schema).unwrap_or(Value::Null)
 }
 #[cfg(test)]

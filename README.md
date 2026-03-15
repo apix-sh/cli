@@ -83,7 +83,7 @@ cargo run -- --help
 # Initialize config/home explicitly (optional)
 cargo run -- init
 
-# Import a local vault from an OpenAPI spec
+# Import a local vault from an OpenAPI 3.0/3.1 spec
 cargo run -- import tests/fixtures/petstore.json --name petstore
 
 # Import directly into a vault repo worktree
@@ -120,7 +120,7 @@ cargo run -- ls petstore/v1/store/order
 - `apix search <query> [--source <name>] [--all-sources] [--no-auto-update]`: Search indexed APIs
 - `apix update [--source <name>] [--all-sources]`: Clone/pull source registry metadata
 - `apix pull <namespace>[/<version>] [--source <name>]`: Sparse-checkout a namespace (or specific version) from a source (default: `core`)
-- `apix import <source> --name <namespace> [--output <vault_root>] [--overwrite]`: Generate vault files from an OpenAPI spec
+- `apix import <source> --name <namespace> [--output <vault_root>] [--overwrite]`: Generate vault files from an OpenAPI 3.0/3.1 JSON or YAML spec
 - `apix ls [namespace|namespace/version[/path...]] [--source <name>]`: List local inventory or detailed routes
 - `apix info <namespace/version> [--source <name>]`: Print API metadata from frontmatter
 - `apix show <route> [--source <name>]`: Print full markdown for a route/type file

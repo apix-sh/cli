@@ -97,7 +97,7 @@ Routes follow the format: `<namespace>/<version>/<path segments>/<METHOD>` (e.g.
 
 ### Importing Custom Specs
 
-If the required API is not in the public registry, you can import an OpenAPI 3.x spec locally:
+If the required API is not in the public registry, you can import an OpenAPI 3.0/3.1 spec (JSON or YAML) locally:
 
 ```bash
 apix import /path/to/openapi.json --name myapi
