@@ -1,6 +1,8 @@
 use crate::error::ApixError;
 use oas3::spec::{Components, ObjectOrReference, SecurityScheme, Spec};
 use regex::Regex;
+use serde_json::{Map, Value};
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct ParsedSpec {
@@ -110,11 +112,82 @@ fn sanitize_spec_for_compat(content: &str) -> String {
     // extensions to allow the spec to parse while losing only the strictness of the constraint.
     let re_exc = Regex::new(r"(?m)(exclusive(?:Minimum|Maximum))(\s*:\s*)(true|false)")
         .expect("valid regex");
-    re_exc
+    let content = re_exc
         .replace_all(&content, |caps: &regex::Captures| {
             format!("x-{}{}{}", &caps[1], &caps[2], &caps[3])
         })
-        .into_owned()
+        .into_owned();
+
+    if let Some(updated) = sanitize_relative_oauth_urls(&content) {
+        updated
+    } else {
+        content
+    }
+}
+
+fn sanitize_relative_oauth_urls(content: &str) -> Option<String> {
+    let mut doc: Value = serde_json::from_str(content)
+        .or_else(|_| serde_yaml::from_str(content))
+        .ok()?;
+
+    let base = doc
+        .get("servers")
+        .and_then(|v| v.as_array())
+        .and_then(|servers| servers.first())
+        .and_then(|server| server.get("url"))
+        .and_then(|url| url.as_str())
+        .and_then(|url| Url::parse(url).ok())?;
+
+    let mut changed = false;
+    if let Some(schemes) = doc
+        .get_mut("components")
+        .and_then(Value::as_object_mut)
+        .and_then(|components| components.get_mut("securitySchemes"))
+        .and_then(Value::as_object_mut)
+    {
+        for scheme in schemes.values_mut() {
+            let Some(scheme_obj) = scheme.as_object_mut() else {
+                continue;
+            };
+            if scheme_obj.get("type").and_then(Value::as_str) == Some("oauth2") {
+                if let Some(flows) = scheme_obj.get_mut("flows").and_then(Value::as_object_mut) {
+                    for flow in flows.values_mut() {
+                        let Some(flow_obj) = flow.as_object_mut() else {
+                            continue;
+                        };
+                        changed |= absolutize_url_field(flow_obj, "authorizationUrl", &base);
+                        changed |= absolutize_url_field(flow_obj, "tokenUrl", &base);
+                        changed |= absolutize_url_field(flow_obj, "refreshUrl", &base);
+                    }
+                }
+            } else if scheme_obj.get("type").and_then(Value::as_str) == Some("openIdConnect") {
+                changed |= absolutize_url_field(scheme_obj, "openIdConnectUrl", &base);
+            }
+        }
+    }
+
+    if !changed {
+        return None;
+    }
+
+    serde_json::to_string(&doc).ok()
+}
+
+fn absolutize_url_field(obj: &mut Map<String, Value>, key: &str, base: &Url) -> bool {
+    let Some(raw) = obj.get(key).and_then(Value::as_str) else {
+        return false;
+    };
+    if Url::parse(raw).is_ok() {
+        return false;
+    }
+    if !raw.starts_with('/') {
+        return false;
+    }
+    let Ok(abs) = base.join(raw) else {
+        return false;
+    };
+    obj.insert(key.to_string(), Value::String(abs.to_string()));
+    true
 }
 
 pub fn format_security_schemes(
@@ -185,6 +258,13 @@ fn format_single_scheme(name: &str, components: &Option<Components>) -> String {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
 
     #[test]
     fn parses_minimal_json_spec_file() {
@@ -450,5 +530,160 @@ paths:
         assert_eq!(parsed.title, "3.1 API");
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn sanitize_spec_for_compat_absolutizes_relative_oauth_urls() {
+        let input = r#"{
+  "openapi": "3.0.0",
+  "info": { "title": "t", "version": "v1" },
+  "servers": [{ "url": "https://api.example.com" }],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "Oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "/v1/oauth2/token",
+            "scopes": {}
+          }
+        }
+      }
+    }
+  }
+}"#;
+        let output = sanitize_spec_for_compat(input);
+        assert!(
+            output.contains(r#""tokenUrl":"https://api.example.com/v1/oauth2/token""#),
+            "expected absolute tokenUrl, got: {output}"
+        );
+    }
+
+    #[test]
+    fn parses_spec_with_relative_oauth_token_url() {
+        let spec = r#"{
+  "openapi": "3.0.0",
+  "info": { "title": "OAuth Relative URL", "version": "v1" },
+  "servers": [{ "url": "https://api.example.com" }],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "Oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "/v1/oauth2/token",
+            "scopes": {}
+          }
+        }
+      }
+    }
+  }
+}"#;
+        let path = std::env::temp_dir().join(format!(
+            "apix-parser-relative-oauth-url-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, spec).expect("write spec");
+
+        let parsed = parse_spec(path.to_str().expect("path str"));
+        assert!(
+            parsed.is_ok(),
+            "relative OAuth tokenUrl should be sanitized and parse successfully: {:?}",
+            parsed.err()
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_paypal_relative_oauth_fixture() {
+        let spec_path = fixture("paypal_relative_oauth.json");
+        let parsed = parse_spec(spec_path.to_str().expect("path str"));
+        assert!(
+            parsed.is_ok(),
+            "PayPal-style relative oauth tokenUrl should parse: {:?}",
+            parsed.err()
+        );
+    }
+
+    #[test]
+    fn sanitize_spec_for_compat_does_not_rewrite_non_root_relative_oauth_urls() {
+        let input = r#"{
+  "openapi": "3.0.0",
+  "info": { "title": "No Rewrite", "version": "v1" },
+  "servers": [{ "url": "https://api.example.com" }],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "Oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "v1/oauth2/token",
+            "scopes": {}
+          }
+        }
+      }
+    }
+  }
+}"#;
+        let output = sanitize_spec_for_compat(input);
+        assert_eq!(
+            output, input,
+            "non-root-relative URL must remain unchanged"
+        );
+    }
+
+    #[test]
+    fn sanitize_spec_for_compat_rewrites_only_relative_urls_in_mixed_flows() {
+        let input = r#"{
+  "openapi": "3.0.0",
+  "info": { "title": "Mixed URLs", "version": "v1" },
+  "servers": [{ "url": "https://api.example.com/base" }],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "Oauth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/oauth/authorize",
+            "tokenUrl": "https://idp.example.com/oauth/token",
+            "refreshUrl": "/oauth/refresh",
+            "scopes": {}
+          },
+          "clientCredentials": {
+            "tokenUrl": "/oauth/token2",
+            "scopes": {}
+          }
+        }
+      }
+    }
+  }
+}"#;
+        let output = sanitize_spec_for_compat(input);
+        let doc: Value = serde_json::from_str(&output).expect("valid json");
+        let auth_code = &doc["components"]["securitySchemes"]["Oauth2"]["flows"]["authorizationCode"];
+        let client_credentials =
+            &doc["components"]["securitySchemes"]["Oauth2"]["flows"]["clientCredentials"];
+
+        assert_eq!(
+            auth_code["authorizationUrl"].as_str(),
+            Some("https://api.example.com/oauth/authorize")
+        );
+        assert_eq!(
+            auth_code["tokenUrl"].as_str(),
+            Some("https://idp.example.com/oauth/token")
+        );
+        assert_eq!(
+            auth_code["refreshUrl"].as_str(),
+            Some("https://api.example.com/oauth/refresh")
+        );
+        assert_eq!(
+            client_credentials["tokenUrl"].as_str(),
+            Some("https://api.example.com/oauth/token2")
+        );
     }
 }

@@ -1,0 +1,29 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "PayPal Orders OAuth Relative URL Repro",
+    "version": "2.25"
+  },
+  "servers": [
+    {
+      "url": "https://api-m.sandbox.paypal.com"
+    }
+  ],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "Oauth2": {
+        "type": "oauth2",
+        "description": "Oauth 2.0 authentication",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "/v1/oauth2/token",
+            "scopes": {
+              "https://uri.paypal.com/services/payments/payment": "Manage payments and checkout workflow."
+            }
+          }
+        }
+      }
+    }
+  }
+}
