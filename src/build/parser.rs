@@ -630,10 +630,7 @@ paths:
   }
 }"#;
         let output = sanitize_spec_for_compat(input);
-        assert_eq!(
-            output, input,
-            "non-root-relative URL must remain unchanged"
-        );
+        assert_eq!(output, input, "non-root-relative URL must remain unchanged");
     }
 
     #[test]
@@ -665,7 +662,8 @@ paths:
 }"#;
         let output = sanitize_spec_for_compat(input);
         let doc: Value = serde_json::from_str(&output).expect("valid json");
-        let auth_code = &doc["components"]["securitySchemes"]["Oauth2"]["flows"]["authorizationCode"];
+        let auth_code =
+            &doc["components"]["securitySchemes"]["Oauth2"]["flows"]["authorizationCode"];
         let client_credentials =
             &doc["components"]["securitySchemes"]["Oauth2"]["flows"]["clientCredentials"];
 

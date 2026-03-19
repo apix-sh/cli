@@ -97,6 +97,11 @@ fn run() -> Result<(), ApixError> {
         Commands::Ls { namespace, source } => {
             inventory::ls(namespace.as_deref(), source.as_deref())
         }
+        Commands::Tree {
+            target,
+            components,
+            source,
+        } => inventory::tree(&target, components, source.as_deref()),
     }
 }
 

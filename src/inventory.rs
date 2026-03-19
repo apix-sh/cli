@@ -56,6 +56,19 @@ struct RouteGroup {
     routes: Vec<RouteEntry>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct TreeOutput {
+    source: String,
+    namespace: String,
+    version: String,
+    tree: TreeNode,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+struct TreeNode {
+    children: BTreeMap<String, TreeNode>,
+}
+
 pub fn ls(namespace: Option<&str>, source_override: Option<&str>) -> Result<(), ApixError> {
     match parse_ls_target(namespace)? {
         LsTarget::All => {
@@ -121,6 +134,44 @@ pub fn ls(namespace: Option<&str>, source_override: Option<&str>) -> Result<(), 
     }
 }
 
+pub fn tree(
+    target: &str,
+    include_components: bool,
+    source_override: Option<&str>,
+) -> Result<(), ApixError> {
+    let (namespace, version) = parse_tree_target(target)?;
+    let resolved = resolve_version_root(&namespace, &version, source_override)?;
+    let paths = collect_tree_paths(&resolved.version_root, include_components)?;
+    let tree = build_tree(paths);
+
+    if output::options().json {
+        let rendered = TreeOutput {
+            source: resolved.source,
+            namespace,
+            version,
+            tree,
+        };
+        print_json(&rendered)?;
+        return Ok(());
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{}/{} (source: {})\n\n",
+        output::fmt_namespace(&namespace),
+        version,
+        output::fmt_source(&resolved.source)
+    ));
+    if tree.children.is_empty() {
+        out.push_str("(empty)\n");
+    } else {
+        render_tree(&tree, "", &mut out);
+    }
+
+    output::print_with_optional_pager(&out);
+    Ok(())
+}
+
 fn print_json<T: Serialize>(value: &T) -> Result<(), ApixError> {
     let rendered = serde_json::to_string_pretty(value)
         .map_err(|e| ApixError::Parse(format!("Failed to render JSON output: {e}")))?;
@@ -153,6 +204,16 @@ fn parse_ls_target(value: Option<&str>) -> Result<LsTarget, ApixError> {
         });
     }
     Ok(LsTarget::Namespace(raw.to_string()))
+}
+
+fn parse_tree_target(value: &str) -> Result<(String, String), ApixError> {
+    let parts: Vec<&str> = value.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() != 2 {
+        return Err(ApixError::Parse(
+            "`apix tree` expects `<namespace>/<version>`".to_string(),
+        ));
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
 fn render_namespace_version_detail(
@@ -302,6 +363,98 @@ fn collect_route_groups(
     }
 
     Ok(grouped)
+}
+
+fn collect_tree_paths(
+    version_root: &Path,
+    include_components: bool,
+) -> Result<Vec<Vec<String>>, ApixError> {
+    let mut out = Vec::new();
+
+    for file in crate::vault::resolver::walk_markdown_under(version_root) {
+        let rel = match file.strip_prefix(version_root) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let rel_str = rel.to_string_lossy();
+
+        // metadata is always ignored
+        if rel_str == "_metadata.md" {
+            continue;
+        }
+
+        let mut rel_no_ext = rel.to_path_buf();
+        rel_no_ext.set_extension("");
+
+        let mut parts: Vec<String> = rel_no_ext
+            .iter()
+            .filter_map(|s| s.to_str())
+            .map(|s| s.to_string())
+            .collect();
+        if parts.is_empty() {
+            continue;
+        }
+
+        if parts[0] == "_components" {
+            if !include_components {
+                continue;
+            }
+            parts[0] = "components".to_string();
+            out.push(parts);
+            continue;
+        } else if parts[0].starts_with('_') {
+            // keep internal directories hidden from output
+            continue;
+        }
+
+        if include_components {
+            let mut with_api_root = Vec::with_capacity(parts.len() + 1);
+            with_api_root.push("API".to_string());
+            with_api_root.extend(parts);
+            out.push(with_api_root);
+            continue;
+        }
+
+        out.push(parts);
+    }
+
+    out.sort();
+    Ok(out)
+}
+
+fn build_tree(paths: Vec<Vec<String>>) -> TreeNode {
+    let mut root = TreeNode::default();
+    for path in paths {
+        insert_tree_path(&mut root, &path);
+    }
+    root
+}
+
+fn insert_tree_path(node: &mut TreeNode, path: &[String]) {
+    if path.is_empty() {
+        return;
+    }
+    let child = node.children.entry(path[0].clone()).or_default();
+    insert_tree_path(child, &path[1..]);
+}
+
+fn render_tree(node: &TreeNode, prefix: &str, out: &mut String) {
+    let len = node.children.len();
+    for (idx, (name, child)) in node.children.iter().enumerate() {
+        let is_last = idx + 1 == len;
+        let branch = if is_last { "`-- " } else { "|-- " };
+        out.push_str(prefix);
+        out.push_str(branch);
+        out.push_str(name);
+        out.push('\n');
+
+        let next_prefix = if is_last {
+            format!("{prefix}    ")
+        } else {
+            format!("{prefix}|   ")
+        };
+        render_tree(child, &next_prefix, out);
+    }
 }
 
 fn extract_route_summary(path: &Path) -> Result<String, ApixError> {
@@ -533,6 +686,17 @@ mod tests {
     }
 
     #[test]
+    fn parses_tree_target() {
+        let parsed = parse_tree_target("demo/v1").expect("parse");
+        assert_eq!(parsed, ("demo".to_string(), "v1".to_string()));
+        let err = parse_tree_target("demo").expect_err("must fail");
+        match err {
+            ApixError::Parse(msg) => assert!(msg.contains("<namespace>/<version>")),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
     #[serial]
     fn scans_inventory_across_sources() {
         let home = std::env::temp_dir().join(format!("apix-ls-scan-{}", std::process::id()));
@@ -727,5 +891,63 @@ mod tests {
             format_versions_detailed(&versions),
             "v1 (routes: 3), v2 (routes: 5)"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn tree_ignores_metadata_and_components_by_default() {
+        let home = std::env::temp_dir().join(format!("apix-tree-default-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        set_var("APIX_HOME", &home);
+
+        std::fs::create_dir_all(home.join("vaults/.local/demo/v1/pets")).expect("mkdir");
+        std::fs::create_dir_all(home.join("vaults/.local/demo/v1/_components/schemas"))
+            .expect("mkdir");
+        std::fs::write(home.join("vaults/.local/demo/v1/_metadata.md"), "#").expect("write");
+        std::fs::write(home.join("vaults/.local/demo/v1/pets/GET.md"), "#").expect("write");
+        std::fs::write(
+            home.join("vaults/.local/demo/v1/_components/schemas/Pet.md"),
+            "#",
+        )
+        .expect("write");
+
+        let out = collect_tree_paths(&home.join("vaults/.local/demo/v1"), false).expect("collect");
+        assert_eq!(out, vec![vec!["pets".to_string(), "GET".to_string()]]);
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    #[serial]
+    fn tree_can_include_components() {
+        let home =
+            std::env::temp_dir().join(format!("apix-tree-components-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        set_var("APIX_HOME", &home);
+
+        std::fs::create_dir_all(home.join("vaults/.local/demo/v1/pets")).expect("mkdir");
+        std::fs::create_dir_all(home.join("vaults/.local/demo/v1/_components/schemas"))
+            .expect("mkdir");
+        std::fs::write(home.join("vaults/.local/demo/v1/_metadata.md"), "#").expect("write");
+        std::fs::write(home.join("vaults/.local/demo/v1/pets/GET.md"), "#").expect("write");
+        std::fs::write(
+            home.join("vaults/.local/demo/v1/_components/schemas/Pet.md"),
+            "#",
+        )
+        .expect("write");
+
+        let out = collect_tree_paths(&home.join("vaults/.local/demo/v1"), true).expect("collect");
+        assert!(out.contains(&vec![
+            "API".to_string(),
+            "pets".to_string(),
+            "GET".to_string()
+        ]));
+        assert!(out.contains(&vec![
+            "components".to_string(),
+            "schemas".to_string(),
+            "Pet".to_string()
+        ]));
+
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

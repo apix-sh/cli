@@ -147,6 +147,17 @@ pub enum Commands {
         #[arg(long)]
         source: Option<String>,
     },
+
+    /// Print endpoint tree for namespace/version
+    Tree {
+        /// Target namespace/version (e.g., "petstore/v1")
+        target: String,
+        /// Include _components tree (metadata is always ignored)
+        #[arg(long)]
+        components: bool,
+        #[arg(long)]
+        source: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -282,5 +293,29 @@ mod tests {
             Shell::PowerShell
         );
         assert_eq!(CompletionShell::Zsh.as_clap_shell(), Shell::Zsh);
+    }
+
+    #[test]
+    fn parses_tree_subcommand() {
+        let cli = Cli::parse_from([
+            "apix",
+            "tree",
+            "petstore/v1",
+            "--components",
+            "--source",
+            "core",
+        ]);
+        match cli.command {
+            Commands::Tree {
+                target,
+                components,
+                source,
+            } => {
+                assert_eq!(target, "petstore/v1");
+                assert!(components);
+                assert_eq!(source.as_deref(), Some("core"));
+            }
+            other => panic!("expected tree, got {other:?}"),
+        }
     }
 }

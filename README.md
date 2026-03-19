@@ -124,6 +124,12 @@ cargo run -- ls petstore/v1 --source core
 # Filter routes by path prefix
 cargo run -- ls petstore/v1/pet
 cargo run -- ls petstore/v1/store/order
+
+# Print endpoint tree for a namespace/version
+cargo run -- tree petstore/v1
+
+# Include components in the tree
+cargo run -- tree petstore/v1 --components
 ```
 
 ## Command Reference
@@ -133,6 +139,7 @@ cargo run -- ls petstore/v1/store/order
 - `apix pull <namespace>[/<version>] [--source <name>]`: Sparse-checkout a namespace (or specific version) from a source (default: `core`)
 - `apix import <source> --name <namespace> [--output <vault_root>] [--overwrite]`: Generate vault files from an OpenAPI 3.0/3.1 JSON or YAML spec
 - `apix ls [namespace|namespace/version[/path...]] [--source <name>]`: List local inventory or detailed routes
+- `apix tree <namespace/version> [--components] [--source <name>]`: Print tree view (metadata is always ignored)
 - `apix info <namespace/version> [--source <name>]`: Print API metadata from frontmatter
 - `apix show <route> [--source <name>]`: Print full markdown for a route/type file
 - `apix peek <route> [--source <name>]`: Print frontmatter + condensed required input info
