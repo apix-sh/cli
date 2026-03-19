@@ -1,6 +1,17 @@
 # apix
 
-`apix` is a Rust CLI for importing, browsing, searching, and calling API endpoint docs stored as local markdown vaults.
+`apix` is a local-first Rust CLI for API discovery and execution, designed for both AI agents and human developers.
+
+It converts monolithic OpenAPI 3.0/3.1 specs into a file-system-native markdown vault, so API docs can be explored directly from the terminal without scraping web UIs or loading huge JSON blobs into context.
+
+apix follows a progressive disclosure workflow:
+
+- `search` and `ls` to discover APIs and routes with low token cost
+- `peek` for condensed required inputs
+- `show` for full endpoint/type docs only when needed
+- `call` to execute requests directly from route metadata
+
+Vaults are plain markdown files on disk (with YAML frontmatter), so they work well with standard shell tools (`ls`, `cat`, `grep`) and remain usable offline after pull/import.
 
 ## Features
 
@@ -36,7 +47,7 @@ Custom install directory:
 curl -fsSL https://apix.sh/install | sh -s -- --bin-dir "$HOME/.local/bin"
 ```
 
-### Homebrew (recommended)
+### Homebrew
 
 ```bash
 brew tap apix-sh/tap
